@@ -1,0 +1,15 @@
+# Dremini Example Gemlog
+
+Welcome to the Dremini example Gemlog. This is a basic Gemini space with some server side scripting. Mostly to demo how to do stuff in Dremini.
+
+Another Gemini page
+=> /another_page.gmi Anohter page
+
+Generate a random number between 0 and 1000
+=> /random_number A random number generator
+
+Get the curent UNIX epoch
+=> /unix_epoch UNIX epoch in seconds
+
+Asks for user input and echo it
+=> /user_input User input

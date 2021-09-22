@@ -1,0 +1,41 @@
+{
+    "app":{
+        "document_root": "./",
+        "file_types": [
+            "gif",
+            "png",
+            "jpg",
+            "js",
+            "css",
+            "html",
+            "ico",
+            "swf",
+            "xap",
+            "apk",
+            "cur",
+            "xml",
+            "gmi"
+        ],
+        "use_implicit_page": true,
+        "implicit_page": "index.gmi",
+        "home_page": "index.gmi",
+        "mime" : {
+            "text/gemini": "gmi" 
+        }
+    },
+    "plugins": [
+        {
+            "name": "dremini::GeminiServerPlugin",
+            "config": {
+                "listeners": [
+                    {
+                        "key": "key.pem",
+                        "cert": "cert.pem",
+                        "ip": "127.0.0.1"
+                    }
+                ],
+                "numThread": 3
+            }
+        }
+    ]
+}

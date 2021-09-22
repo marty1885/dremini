@@ -1,0 +1,35 @@
+<%inc
+#include <trantor/utils/Date.h>
+#include <iomanip>
+#include <sstream>
+%>
+
+<%c++
+
+auto hex = [](size_t n) -> std::string
+{
+	std::stringstream ss;
+	ss << "0x" << std::hex << std::setfill('0') << std::setw(16) << n;
+	return ss.str();
+};
+
+size_t epoch = trantor::Date::now().secondsSinceEpoch();
+bool before2038 = epoch < 0x7fffffff;
+%>
+
+# UNIX Epoch
+
+Current UNIX time is {%epoch%}. Or {%hex(epoch)%}.
+
+<%c++
+if(before2038)
+	$$ << "We are before the 2038 UNIX time end.\n";
+else
+	$$ << "32bit UNIX time have ended.\n";
+
+if(sizeof(size_t) == 4)
+	$$ << "Warning: The server is running on a 32 bit system. The result of this page may not be correct.\n";
+
+%>
+
+

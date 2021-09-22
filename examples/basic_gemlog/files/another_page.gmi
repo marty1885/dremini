@@ -1,0 +1,3 @@
+# Another Page
+
+This is just another page of the example
