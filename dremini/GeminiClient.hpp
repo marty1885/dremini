@@ -28,7 +28,7 @@ namespace internal
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
@@ -41,6 +41,7 @@ protected:
                     trantor::MsgBuffer *msg);
 
     bool gotHeader_ = false;
+    double timeout_;
     drogon::HttpReqCallback callback_;
     std::string meta_;
     int status_;
@@ -52,11 +53,12 @@ protected:
     std::shared_ptr<trantor::TcpClient> client_;
     std::shared_ptr<trantor::Resolver> resolver_;
     trantor::InetAddress address_;
+    trantor::TimerId timeoutTimerId_;
 };
 
 }
 
-void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, trantor::EventLoop* loop=drogon::app().getLoop());
+void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0, trantor::EventLoop* loop=drogon::app().getLoop());
 
 #ifdef __cpp_impl_coroutine
 namespace internal
@@ -64,7 +66,7 @@ namespace internal
 
 struct GeminiRespAwaiter : public drogon::CallbackAwaiter<HttpResponsePtr>
 {
-    HttpRespAwaiter(std::string url, trantor::EventLoop* loop)
+    HttpRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10)
         url_(url), loop_(loop)
     {
     }
@@ -89,7 +91,7 @@ struct GeminiRespAwaiter : public drogon::CallbackAwaiter<HttpResponsePtr>
                     std::make_exception_ptr(std::runtime_error(reason)));
             }
             handle.resume();
-        }, loop_);
+        }, timeout, loop_);
     }
 
 private:
@@ -97,7 +99,7 @@ private:
     trantor::EventLoop* loop_;
 };
 
-internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, trantor::EventLoop* loop=drogon::app().getLoop())
+internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10, trantor::EventLoop* loop=drogon::app().getLoop())
 {
     return internal::GeminiRespAwaiter(url, loop);
 }

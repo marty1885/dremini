@@ -53,8 +53,8 @@ namespace dremini
 namespace internal
 {
 
-GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop)
-    : loop_(loop)
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout)
+    : loop_(loop), timeout_(timeout)
 {
     static const std::regex re(R"(([a-z]+):\/\/([A-Za-z\.0-9\-]+)(\:[0-9]+)?($|\/.*))");
     std::smatch match;
@@ -70,15 +70,20 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop)
         throw std::invalid_argument("Must be a gemini URL");
     needNameResolve_ = isIPString(host_);
     port_ = 1965;
-    // TODO: Make sure we have valid port
     if(port.empty() == false)
-        port_ = std::stoi(port.substr(1));
+    {
+        int portNum = std::stoi(port.substr(1));
+        if(portNum >= 65536 || portNum <= 0)
+        {
+            LOG_ERROR << port << "is not a valid port number";
+        }
+        port_ = portNum;
+    }
 
     if(path.empty() && url.back() != '/')
         url_ = url + "/";
     else
         url_ = url;
-
 }
 
 void GeminiClient::fire()
@@ -131,6 +136,8 @@ void GeminiClient::sendRequestInLoop()
         }
         else
         {
+            if(thisPtr->timeout_ > 0)
+                thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
             if(!gotHeader_)
             {
                 callback_(ReqResult::BadResponse, nullptr);
@@ -178,6 +185,8 @@ void GeminiClient::sendRequestInLoop()
         auto thisPtr = weakPtr.lock();
         if (!thisPtr)
             return;
+        if(thisPtr->timeout_ > 0)
+            thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
         if (err == trantor::SSLError::kSSLHandshakeError)
             thisPtr->callback_(ReqResult::HandshakeError, nullptr);
         else if (err == trantor::SSLError::kSSLInvalidCertificate)
@@ -193,15 +202,30 @@ void GeminiClient::sendRequestInLoop()
         auto thisPtr = weakPtr.lock();
         if (!thisPtr)
             return;
+        if(thisPtr->timeout_ > 0)
+            thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
         // can't connect to server
         thisPtr->callback_(ReqResult::BadServerAddress, nullptr);
     });
+
+    if(timeout_ > 0)
+    {
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
+            auto thisPtr = weakPtr.lock();
+            if(!thisPtr)
+                return;
+            thisPtr->callback_(ReqResult::Timeout, nullptr);
+
+        });
+    }
     client_->connect();
 }
 
 void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg)
 {
+    if(timeout_ > 0)
+        loop_->invalidateTimer(timeoutTimerId_);
     LOG_TRACE << "Got data from Gemini server";
     if(!gotHeader_)
     {
@@ -225,14 +249,25 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         meta_ = std::string(header.begin()+3, header.end());
         msg->read(std::distance(msg->peek(), crlf)+2);
     }
+    auto weakPtr = weak_from_this();
+    if(timeout_ > 0)
+    {
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
+            auto thisPtr = weakPtr.lock();
+            if(!thisPtr)
+                return;
+            thisPtr->callback_(ReqResult::Timeout, nullptr);
+
+        });
+    }       
 }
 
 
 }
 
-void sendRequest(const std::string& url, const HttpReqCallback& callback, trantor::EventLoop* loop)
+void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout, trantor::EventLoop* loop)
 {
-    auto client = std::make_shared<dremini::internal::GeminiClient>(url, loop);
+    auto client = std::make_shared<dremini::internal::GeminiClient>(url, loop, timeout);
     client->setCallback([callback, client] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
         client = nullptr;

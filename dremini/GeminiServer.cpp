@@ -120,14 +120,14 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
 
     assert(status < 100 && status > 10);
 
-    if(status%10 == 1)
+    if(status/10 == 1)
     {
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
             meta = "Input";
         respHeader = std::to_string(status) + " " + meta + "\r\n";
     }
-    else if(status%10 == 2)
+    else if(status/10 == 2)
     {
         auto ct = resp->contentTypeString();
         if(ct != "")
@@ -135,18 +135,18 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
         else
             respHeader = std::to_string(status) + " application/octet-stream\r\n";
     }
-    else if(status%10 == 3)
+    else if(status/10 == 3)
     {
         respHeader = std::to_string(status) + " " + resp->getHeader("location") + "\r\n";
     }
-    else if(status%10 == 4)
+    else if(status/10 == 4)
     {
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
             meta = "Temporary Failure";
         respHeader = std::to_string(status) + " " + meta + "\r\n";
     }
-    else if(status%10 == 5)
+    else if(status/10 == 5)
     {
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
