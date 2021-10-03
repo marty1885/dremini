@@ -56,7 +56,7 @@ namespace internal
 GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout)
     : loop_(loop), timeout_(timeout)
 {
-    static const std::regex re(R"(([a-z]+):\/\/([A-Za-z\.0-9\-]+)(\:[0-9]+)?($|\/.*))");
+    static const std::regex re(R"(([a-z]+):\/\/([A-Za-z\.0-9\-_]+)(\:[0-9]+)?($|\/.*))");
     std::smatch match;
     if(!std::regex_match(url, match, re))
         throw std::invalid_argument(url + " is no a valid url");
