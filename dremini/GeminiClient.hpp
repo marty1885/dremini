@@ -64,42 +64,45 @@ void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback
 namespace internal
 {
 
-struct GeminiRespAwaiter : public drogon::CallbackAwaiter<HttpResponsePtr>
+struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
 {
-    HttpRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10)
-        url_(url), loop_(loop)
+    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10)
+        : url_(url), loop_(loop), timeout_(timeout)
     {
     }
 
     void await_suspend(std::coroutine_handle<> handle)
     {
-        sendRequest(url_, [](drogon::ReqResult res, HttpResponsePtr resp){
-            if (result == ReqResult::Ok)
+        using namespace drogon;
+        sendRequest(url_, [this, handle](ReqResult res, HttpResponsePtr resp){
+            if (res == ReqResult::Ok)
                 setValue(resp);
             else
             {
                 std::string reason;
-                if (result == ReqResult::BadResponse)
+                if (res == ReqResult::BadResponse)
                     reason = "BadResponse";
-                else if (result == ReqResult::NetworkFailure)
+                else if (res == ReqResult::NetworkFailure)
                     reason = "NetworkFailure";
-                else if (result == ReqResult::BadServerAddress)
+                else if (res == ReqResult::BadServerAddress)
                     reason = "BadServerAddress";
-                else if (result == ReqResult::Timeout)
+                else if (res == ReqResult::Timeout)
                     reason = "Timeout";
                 setException(
                     std::make_exception_ptr(std::runtime_error(reason)));
             }
             handle.resume();
-        }, timeout, loop_);
+        }, timeout_, loop_);
     }
 
 private:
     std::string url_;
+    double timeout_;
     trantor::EventLoop* loop_;
 };
+}
 
-internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10, trantor::EventLoop* loop=drogon::app().getLoop())
+inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10, trantor::EventLoop* loop=drogon::app().getLoop())
 {
     return internal::GeminiRespAwaiter(url, loop);
 }

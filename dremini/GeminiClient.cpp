@@ -267,7 +267,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout, trantor::EventLoop* loop)
 {
-    auto client = std::make_shared<dremini::internal::GeminiClient>(url, loop, timeout);
+    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout);
     client->setCallback([callback, client] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
         client = nullptr;
