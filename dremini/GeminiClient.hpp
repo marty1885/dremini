@@ -28,7 +28,7 @@ namespace internal
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = -1);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
@@ -54,11 +54,13 @@ protected:
     std::shared_ptr<trantor::Resolver> resolver_;
     trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;
+    intmax_t maxBodySize_;
 };
 
 }
 
-void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0, trantor::EventLoop* loop=drogon::app().getLoop());
+void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
+    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1);
 
 #ifdef __cpp_impl_coroutine
 namespace internal
@@ -66,8 +68,8 @@ namespace internal
 
 struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
 {
-    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10)
-        : url_(url), loop_(loop), timeout_(timeout)
+    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1)
+        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize)
     {
     }
 
@@ -92,19 +94,21 @@ struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePt
                     std::make_exception_ptr(std::runtime_error(reason)));
             }
             handle.resume();
-        }, timeout_, loop_);
+        }, timeout_, loop_, maxBodySize_);
     }
 
 private:
     std::string url_;
     double timeout_;
+    intmax_t maxBodySize_;
     trantor::EventLoop* loop_;
 };
 }
 
-inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10, trantor::EventLoop* loop=drogon::app().getLoop())
+inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10
+    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1)
 {
-    return internal::GeminiRespAwaiter(url, loop);
+    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize);
 }
 
 #endif

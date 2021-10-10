@@ -53,8 +53,8 @@ namespace dremini
 namespace internal
 {
 
-GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout)
-    : loop_(loop), timeout_(timeout)
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize)
+    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize)
 {
     static const std::regex re(R"(([a-z]+):\/\/([A-Za-z\.0-9\-_]+)(\:[0-9]+)?($|\/.*))");
     std::smatch match;
@@ -242,6 +242,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         {
             // bad response
             callback_(ReqResult::BadResponse, nullptr);
+            connPtr->forceClose();
             return;
         }
 
@@ -249,6 +250,14 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         meta_ = std::string(header.begin()+3, header.end());
         msg->read(std::distance(msg->peek(), crlf)+2);
     }
+    if(maxBodySize_ > 0 && msg->readableBytes() > maxBodySize_)
+    {
+        // bad response
+        callback_(ReqResult::BadResponse, nullptr);
+        connPtr->forceClose();
+        return;
+    }
+
     auto weakPtr = weak_from_this();
     if(timeout_ > 0)
     {
@@ -265,9 +274,10 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
 }
 
-void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout, trantor::EventLoop* loop)
+void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
+    , trantor::EventLoop* loop, intmax_t maxBodySize)
 {
-    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout);
+    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize);
     client->setCallback([callback, client] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
         client = nullptr;
