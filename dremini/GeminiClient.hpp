@@ -90,6 +90,10 @@ struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePt
                     reason = "BadServerAddress";
                 else if (res == ReqResult::Timeout)
                     reason = "Timeout";
+                else if(res == ReqResult::HandshakeError)
+                    reason = "HandshakeError";
+                else if(res == ReqResult::InvalidCertificate)
+                    reason = "InvalidCertificate";
                 setException(
                     std::make_exception_ptr(std::runtime_error(reason)));
             }

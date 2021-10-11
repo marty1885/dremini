@@ -118,7 +118,7 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
         status = httpStatus/100*10;
     std::string respHeader;
 
-    assert(status < 100 && status > 10);
+    assert(status < 100 && status >= 10);
 
     if(status/10 == 1)
     {

@@ -72,7 +72,7 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
     port_ = 1965;
     if(port.empty() == false)
     {
-        int portNum = std::stoi(port.substr(1));
+        int portNum = std::stoi(port);
         if(portNum >= 65536 || portNum <= 0)
         {
             LOG_ERROR << port << "is not a valid port number";
@@ -205,7 +205,7 @@ void GeminiClient::sendRequestInLoop()
         if(thisPtr->timeout_ > 0)
             thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
         // can't connect to server
-        thisPtr->callback_(ReqResult::BadServerAddress, nullptr);
+        thisPtr->callback_(ReqResult::NetworkFailure, nullptr);
     });
 
     if(timeout_ > 0)
@@ -241,7 +241,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         if(header.size() < 3 || header[2] != ' ')
         {
             // bad response
-            callback_(ReqResult::BadResponse, nullptr);
+            // callback_(ReqResult::BadResponse, nullptr);
             connPtr->forceClose();
             return;
         }
@@ -253,7 +253,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     if(maxBodySize_ > 0 && msg->readableBytes() > maxBodySize_)
     {
         // bad response
-        callback_(ReqResult::BadResponse, nullptr);
+        // callback_(ReqResult::BadResponse, nullptr);
         connPtr->forceClose();
         return;
     }
