@@ -65,6 +65,8 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
     std::string path = match[4];
     std::string query = match[5];
     HttpRequestPtr req = HttpRequest::newHttpRequest();
+    if(path.empty())
+        path = "/";
     req->setMethod(Get);
     req->setPath(path);
     req->addHeader("protocol", "gemini");
