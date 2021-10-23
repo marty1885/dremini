@@ -114,7 +114,7 @@ void GeminiClient::sendRequestInLoop()
 {
     // TODO: Validate certificate
     auto weakPtr = weak_from_this();
-    client_->enableSSL(false, false);
+    client_->enableSSL(false, false, host_);
     client_->setMessageCallback([weakPtr](const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg) {
         auto thisPtr = weakPtr.lock();
