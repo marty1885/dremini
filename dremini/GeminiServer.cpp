@@ -139,7 +139,10 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
     }
     else if(status/10 == 3)
     {
-        respHeader = std::to_string(status) + " " + resp->getHeader("location") + "\r\n";
+        if(!resp->getHeader("location").empty())
+            respHeader = std::to_string(status) + " " + resp->getHeader("location") + "\r\n";
+        else
+            respHeader = std::to_string(status) + " " + resp->getHeader("meta") + "\r\n";
     }
     else if(status/10 == 4)
     {
