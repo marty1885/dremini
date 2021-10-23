@@ -56,7 +56,7 @@ namespace internal
 GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize)
     : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize)
 {
-    static const std::regex re(R"(([a-z]+):\/\/([A-Za-z\.0-9\-_]+)(?:\:([0-9]+))?($|\/.*))");
+    static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
     std::smatch match;
     if(!std::regex_match(url, match, re))
         throw std::invalid_argument(url + " is no a valid url");
@@ -138,6 +138,11 @@ void GeminiClient::sendRequestInLoop()
         {
             if(thisPtr->timeout_ > 0)
                 thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
+            if(closeReason_ != ReqResult::Ok)
+            {
+                callback_(closeReason_, nullptr);
+                return;
+            }
             if(!gotHeader_)
             {
                 callback_(ReqResult::BadResponse, nullptr);
@@ -241,7 +246,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         if(header.size() < 3 || header[2] != ' ')
         {
             // bad response
-            // callback_(ReqResult::BadResponse, nullptr);
+            closeReason_ = ReqResult::BadResponse;
             connPtr->forceClose();
             return;
         }
@@ -252,8 +257,9 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     }
     if(maxBodySize_ > 0 && msg->readableBytes() > maxBodySize_)
     {
+        LOG_DEBUG << "Recived more data than " << maxBodySize_ << " bites";
         // bad response
-        // callback_(ReqResult::BadResponse, nullptr);
+        closeReason_ = ReqResult::BadResponse;
         connPtr->forceClose();
         return;
     }

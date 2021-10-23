@@ -55,6 +55,7 @@ protected:
     trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;
     intmax_t maxBodySize_;
+    drogon::ReqResult closeReason_ = drogon::ReqResult::Ok;
 };
 
 }

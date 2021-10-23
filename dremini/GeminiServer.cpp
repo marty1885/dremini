@@ -50,7 +50,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 
     std::string url(buf->peek(), std::distance(buf->peek(), crlf));
 
-    static const std::regex re(R"(([a-z]+):\/\/([A-Za-z.0-9\-_]+)(?:\:([0-9]+))?(\/$|$|\/[^?]*)(?:\?(.*))?)");
+    static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?(\/$|$|\/[^?]*)(?:\?(.*))?)");
     std::smatch match;
     if(!std::regex_match(url, match, re))
     {
