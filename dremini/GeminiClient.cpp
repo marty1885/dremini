@@ -243,7 +243,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
         const string_view header(msg->peek(), std::distance(msg->peek(), crlf));
         LOG_TRACE << "Gemini header is: " << header;
-        if(header.size() < 3 || header[2] != ' ')
+        if(header.size() < 2 || (header.size() >= 3 && header[2] != ' '))
         {
             // bad response
             closeReason_ = ReqResult::BadResponse;
@@ -252,7 +252,16 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         }
 
         status_ = std::stoi(std::string(header.begin(), header.begin()+2));
-        meta_ = std::string(header.begin()+3, header.end());
+        if(header.size() >= 4)
+            meta_ = std::string(header.begin()+3, header.end());
+        if(!downloadMimes_.empty() && status_ / 10 == 2)
+        {
+            std::string mime = meta_.substr(0, meta_.find_first_of("; ,"));
+            if(std::find(downloadMimes_.begin(), downloadMimes_.end(), mime) == downloadMimes_.end()) {
+                LOG_TRACE << "Ignoring file of MIME " << mime;
+                connPtr->forceClose();
+            }
+        }
         msg->read(std::distance(msg->peek(), crlf)+2);
     }
     if(maxBodySize_ > 0 && msg->readableBytes() > maxBodySize_)
@@ -281,13 +290,14 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 }
 
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
-    , trantor::EventLoop* loop, intmax_t maxBodySize)
+    , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes)
 {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize);
     client->setCallback([callback, client] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
         client = nullptr;
     });
+    client->setMimes(mimes);
     client->fire();
 }
 }

@@ -35,6 +35,13 @@ public:
         callback_ = callback;
     }
 
+    // If mimes are set. The client will only download content from these MIMEs.
+    // If the server returns MIMEs not in the set. The client returns an empty response with the original header
+    void setMimes(const std::vector<std::string> mimes)
+    {
+        downloadMimes_ = mimes;
+    }
+
 protected:
     void sendRequestInLoop();
     void onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
@@ -55,13 +62,14 @@ protected:
     trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;
     intmax_t maxBodySize_;
+    std::vector<std::string> downloadMimes_;
     drogon::ReqResult closeReason_ = drogon::ReqResult::Ok;
 };
 
 }
 
 void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
-    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1);
+    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {});
 
 #ifdef __cpp_impl_coroutine
 namespace internal
@@ -69,8 +77,8 @@ namespace internal
 
 struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
 {
-    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1)
-        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize)
+    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {})
+        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes)
     {
     }
 
@@ -99,7 +107,7 @@ struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePt
                     std::make_exception_ptr(std::runtime_error(reason)));
             }
             handle.resume();
-        }, timeout_, loop_, maxBodySize_);
+        }, timeout_, loop_, maxBodySize_, mimes_);
     }
 
 private:
@@ -107,13 +115,14 @@ private:
     double timeout_;
     intmax_t maxBodySize_;
     trantor::EventLoop* loop_;
+    std::vector<std::string> mimes_;
 };
 }
 
 inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10
-    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1)
+    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {})
 {
-    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize);
+    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes);
 }
 
 #endif
