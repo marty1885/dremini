@@ -260,6 +260,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             if(std::find(downloadMimes_.begin(), downloadMimes_.end(), mime) == downloadMimes_.end()) {
                 LOG_TRACE << "Ignoring file of MIME " << mime;
                 connPtr->forceClose();
+                return;
             }
         }
         msg->read(std::distance(msg->peek(), crlf)+2);

@@ -82,8 +82,8 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
     }
     idx = idx % app().getThreadNum();
     // Drogon only accepts request from it's own event loops
-    app().getIOLoop(idx)->runInLoop([req, conn, this](){
-        app().forward(req, [req, conn, this](const HttpResponsePtr& resp){
+    app().getIOLoop(idx)->runInLoop([req=std::move(req), conn=std::move(conn), this](){
+        app().forward(req, [req=std::move(req), conn=std::move(conn), this](const HttpResponsePtr& resp){
             sendResponseBack(conn, resp);
         });
     });

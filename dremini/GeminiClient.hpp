@@ -75,7 +75,7 @@ void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback
 namespace internal
 {
 
-struct GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
+struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
 {
     GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {})
         : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes)

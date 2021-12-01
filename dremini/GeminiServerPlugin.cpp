@@ -48,7 +48,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             }
             if(ip.empty())
             {
-                LOG_FATAL << "Gemini Server IP must the specsifed";
+                LOG_FATAL << "Gemini Server IP not specsifed";
                 exit(1);
             }
 
