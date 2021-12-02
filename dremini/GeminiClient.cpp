@@ -53,8 +53,8 @@ namespace dremini
 namespace internal
 {
 
-GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize)
-    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize)
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize, double maxTransferDuration)
+    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), maxTransferDuration_(maxTransferDuration)
 {
     static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
     std::smatch match;
@@ -136,8 +136,10 @@ void GeminiClient::sendRequestInLoop()
         }
         else
         {
-            if(thisPtr->timeout_ > 0)
-                thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
+            if(timeout_ > 0)
+                loop_->invalidateTimer(timeoutTimerId_);
+            if(maxTransferDuration_ > 0)
+                loop_->invalidateTimer(transgerTimerId_);
             if(closeReason_ != ReqResult::Ok)
             {
                 callback_(closeReason_, nullptr);
@@ -215,11 +217,23 @@ void GeminiClient::sendRequestInLoop()
 
     if(timeout_ > 0)
     {
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr, this](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            thisPtr->callback_(ReqResult::Timeout, nullptr);
+            closeReason_ = ReqResult::Timeout;
+            client_->connection()->forceClose();
+
+        });
+    }
+    if(maxTransferDuration_ > 0)
+    {
+        transgerTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr, this](){
+            auto thisPtr = weakPtr.lock();
+            if(!thisPtr)
+                return;
+            closeReason_ = ReqResult::Timeout;
+            client_->connection()->forceClose();
 
         });
     }
@@ -277,11 +291,12 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     auto weakPtr = weak_from_this();
     if(timeout_ > 0)
     {
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr, connPtr, this](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            thisPtr->callback_(ReqResult::Timeout, nullptr);
+            closeReason_ = ReqResult::Timeout;
+            connPtr->forceClose();
 
         });
     }       
@@ -291,9 +306,10 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 }
 
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
-    , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes)
+    , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
+    , double maxTransferDuration)
 {
-    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize);
+    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
     client->setCallback([callback, client] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
         client = nullptr;

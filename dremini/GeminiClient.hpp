@@ -28,7 +28,7 @@ namespace internal
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = -1);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = -1, double maxTransferDuration = 0);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
@@ -64,12 +64,15 @@ protected:
     intmax_t maxBodySize_;
     std::vector<std::string> downloadMimes_;
     drogon::ReqResult closeReason_ = drogon::ReqResult::Ok;
+    double maxTransferDuration_;
+    trantor::TimerId transgerTimerId_;
 };
 
 }
 
 void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
-    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {});
+    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
+    , double maxTransferDuration=0);
 
 #ifdef __cpp_impl_coroutine
 namespace internal
