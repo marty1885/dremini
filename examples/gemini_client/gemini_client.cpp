@@ -18,6 +18,8 @@ int main()
                 LOG_ERROR << "InvalidCertificate";
             else if(result == ReqResult::NetworkFailure)
                 LOG_ERROR << "NetworkFailure";
+            else if(result == ReqResult::Timeout)
+                LOG_ERROR << "Timeout";
             else if(result == ReqResult::Ok)
                 LOG_INFO << "It works!";
             if(!resp)

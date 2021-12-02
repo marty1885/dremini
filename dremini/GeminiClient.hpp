@@ -80,8 +80,9 @@ namespace internal
 
 struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
 {
-    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {})
-        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes)
+    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
+        , double maxTransferDuration=0)
+        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes), maxTransferDuration_(maxTransferDuration)
     {
     }
 
@@ -110,7 +111,7 @@ struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::
                     std::make_exception_ptr(std::runtime_error(reason)));
             }
             handle.resume();
-        }, timeout_, loop_, maxBodySize_, mimes_);
+        }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_);
     }
 
 private:
@@ -119,13 +120,15 @@ private:
     intmax_t maxBodySize_;
     trantor::EventLoop* loop_;
     std::vector<std::string> mimes_;
+    double maxTransferDuration_;
 };
 }
 
 inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10
-    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {})
+    , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
+    , double maxTransferDuration = 0)
 {
-    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes);
+    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes, maxTransferDuration);
 }
 
 #endif
