@@ -45,7 +45,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
                 std::string param = meta.substr(n+1);
                 meta = url + "?query=" + param;
             }
-            res += "<a href=\""+meta+"\">"+text+"</a><br>\n";
+            res += "<div class=\"link\"><a href=\""+meta+"\">"+text+"</a></div>\n";
         }
         else if(node.type == "preformatted_text")
             res += "<pre>"+text+"</pre>\n";

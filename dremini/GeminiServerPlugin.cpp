@@ -21,7 +21,7 @@ html {
 
 body {
 	background: #202020;
-	max-width: 920px;
+	max-width: 62.841em;
 	margin: 0 auto;
 	padding: 1rem 2rem;
 }
@@ -61,16 +61,13 @@ li:not(:last-child) {
 	margin-bottom: 0.5rem;
 }
 
-a {
-	position: relative;
-}
-
 a:before {
 	content: '⇒';
 	color: #999;
 	text-decoration: none;
+    display:inline-block;
 	font-weight: bold;
-	position: absolute;
+	position: relative;
 	left: -1.25rem;
 }
 
@@ -130,7 +127,7 @@ dl dt:not(:first-child) {
 
 a {
 	color: #00FF00;
-    line-height: 2rem;
+    position: relative;
 }
 
 a:visited {
@@ -163,6 +160,11 @@ input[type="submit"]{
         width: auto;
 }
 
+.link {
+    margin-top:0.5rem;
+    width: 100%;
+}
+
 )zz";
 
 static const std::string_view htmlTemplate = R"zz(
@@ -170,6 +172,7 @@ static const std::string_view htmlTemplate = R"zz(
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>__THIS_IS_THIS_TITLE_123456789__</title>
 </head>
 <body>
@@ -189,6 +192,7 @@ static const std::string_view userInputTemplate = R"zz(
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>__THIS_IS_THIS_TITLE_123456789__</title>
 </head>
 <body>
