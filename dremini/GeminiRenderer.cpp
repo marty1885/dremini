@@ -55,5 +55,5 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
             res += "  <li>"+text+"</li>\n";
         }
     }
-    return {res, title};
+    return {res, HttpViewData::htmlTranslate(title)};
 }
