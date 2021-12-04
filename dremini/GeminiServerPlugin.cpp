@@ -130,6 +130,7 @@ dl dt:not(:first-child) {
 
 a {
 	color: #00FF00;
+    line-height: 2rem;
 }
 
 a:visited {
@@ -159,7 +160,7 @@ input:focus {
 
 input[type="submit"]{
         margin-top: 0.5rem;
-        width: 5rem;
+        width: auto;
 }
 
 )zz";
@@ -176,6 +177,9 @@ static const std::string_view htmlTemplate = R"zz(
     __THIS_IS_THIS_CSS_123456789__
 </style>
     __THIS_IS_THIS_BODY_123456789__
+    <br><br><br>
+    <hr>
+    <blockquote>This page is rended from Gemini Gemtext to HTML. We recommened to get a proper Gemini client for the best experience.</blockquote>
 </body>
 </html>
 

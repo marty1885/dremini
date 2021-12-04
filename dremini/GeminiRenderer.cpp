@@ -33,7 +33,20 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
         else if(node.type == "quote")
             res += "<blockquote>"+text+"</blockquote>\n";
         else if(node.type == "link")
-            res += "<a href=\""+node.meta+"\">"+text+"</a>";
+        {
+            if(text.empty())
+                text = node.meta;
+            std::string meta = node.meta;
+            // Quick and dirty parameter hack
+            auto n = meta.find('?');
+            if(n != std::string::npos && meta.find("gemini://") != 0)
+            {
+                std::string url = meta.substr(0, n);
+                std::string param = meta.substr(n+1);
+                meta = url + "?query=" + param;
+            }
+            res += "<a href=\""+meta+"\">"+text+"</a><br>\n";
+        }
         else if(node.type == "preformatted_text")
             res += "<pre>"+text+"</pre>\n";
         else if(node.type == "list") {
