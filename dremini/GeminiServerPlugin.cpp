@@ -272,7 +272,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             // HACK: Use 418 as a marker to indicate this is a Gemini status 10 (INPUT).
             // Otherwise drogon drops http responses < 100
             // TODO: Handle status 11 - sensitive input
-            if(int(resp->statusCode())/10 == 1)
+            if(int(resp->statusCode())/10 == 1 && req->getHeader("protocol") == "")
                 resp->setStatusCode(k418ImATeapot);
         });
         app().registerPreSendingAdvice([](const HttpRequestPtr& req, const HttpResponsePtr& resp) {
