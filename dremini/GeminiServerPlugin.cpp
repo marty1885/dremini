@@ -179,7 +179,7 @@ static const std::string_view htmlTemplate = R"zz(
     __THIS_IS_THIS_BODY_123456789__
     <br><br><br>
     <hr>
-    <blockquote>This page is rended from Gemini Gemtext to HTML. We recommened to get a proper Gemini client for the best experience.</blockquote>
+    <blockquote>This page is rendered from Gemini Gemtext to HTML. We recommened to get a proper Gemini client for the best experience.</blockquote>
 </body>
 </html>
 
