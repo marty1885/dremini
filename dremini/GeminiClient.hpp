@@ -65,7 +65,7 @@ protected:
     std::vector<std::string> downloadMimes_;
     drogon::ReqResult closeReason_ = drogon::ReqResult::Ok;
     double maxTransferDuration_;
-    trantor::TimerId transgerTimerId_;
+    trantor::TimerId transferTimerId_;
 };
 
 }

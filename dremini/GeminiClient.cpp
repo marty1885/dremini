@@ -139,7 +139,7 @@ void GeminiClient::sendRequestInLoop()
             if(timeout_ > 0)
                 loop_->invalidateTimer(timeoutTimerId_);
             if(maxTransferDuration_ > 0)
-                loop_->invalidateTimer(transgerTimerId_);
+                loop_->invalidateTimer(transferTimerId_);
             if(closeReason_ != ReqResult::Ok)
             {
                 callback_(closeReason_, nullptr);
@@ -221,19 +221,23 @@ void GeminiClient::sendRequestInLoop()
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            closeReason_ = ReqResult::Timeout;
-            client_->connection()->forceClose();
+            if(closeReason_ != ReqResult::Ok) {
+                closeReason_ = ReqResult::Timeout;
+                client_->connection()->forceClose();
+            }
 
         });
     }
     if(maxTransferDuration_ > 0)
     {
-        transgerTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr, this](){
+        transferTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr, this](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            closeReason_ = ReqResult::Timeout;
-            client_->connection()->forceClose();
+            if(closeReason_ != ReqResult::Ok) {
+                closeReason_ = ReqResult::Timeout;
+                client_->connection()->forceClose();
+            }
 
         });
     }
@@ -260,8 +264,10 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         if(header.size() < 2 || (header.size() >= 3 && header[2] != ' '))
         {
             // bad response
-            closeReason_ = ReqResult::BadResponse;
-            connPtr->forceClose();
+            if(closeReason_ != ReqResult::Ok) {
+                closeReason_ = ReqResult::BadResponse;
+                connPtr->forceClose();
+            }
             return;
         }
 
@@ -283,8 +289,10 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     {
         LOG_DEBUG << "Recived more data than " << maxBodySize_ << " bites";
         // bad response
-        closeReason_ = ReqResult::BadResponse;
-        connPtr->forceClose();
+        if(closeReason_ != ReqResult::Ok) {
+            closeReason_ = ReqResult::BadResponse;
+            connPtr->forceClose();
+        }
         return;
     }
 
@@ -295,9 +303,10 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            closeReason_ = ReqResult::Timeout;
-            connPtr->forceClose();
-
+            if(closeReason_ != ReqResult::Ok) {
+                closeReason_ = ReqResult::Timeout;
+                connPtr->forceClose();
+            }
         });
     }       
 }
