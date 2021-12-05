@@ -49,10 +49,15 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
         }
         else if(node.type == "preformatted_text")
             res += "<pre>"+text+"</pre>\n";
-        else if(node.type == "list") {
+
+        if(node.type == "list") {
             if(last_is_list == false)
                 res += "<ul>\n";
             res += "  <li>"+text+"</li>\n";
+            last_is_list = true;
+        }
+        else {
+            last_is_list = false;
         }
     }
     return {res, HttpViewData::htmlTranslate(title)};
