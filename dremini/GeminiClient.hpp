@@ -37,7 +37,7 @@ public:
 
     // If mimes are set. The client will only download content from these MIMEs.
     // If the server returns MIMEs not in the set. The client returns an empty response with the original header
-    void setMimes(const std::vector<std::string> mimes)
+    void setMimes(const std::vector<std::string>& mimes)
     {
         downloadMimes_ = mimes;
     }
@@ -51,7 +51,7 @@ protected:
     double timeout_;
     drogon::HttpReqCallback callback_;
     std::string meta_;
-    int status_;
+    int status_ = 0;
     std::string url_;
     std::string host_;
     short port_;
