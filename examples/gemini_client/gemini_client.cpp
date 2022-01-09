@@ -1,12 +1,14 @@
 #include <drogon/drogon.h>
 #include <dremini/GeminiClient.hpp>
+#include <trantor/utils/Logger.h>
 
 using namespace drogon;
 
 int main()
 {
     LOG_INFO << "Sending request to gemini://gemini.circumlunar.space/";
-    dremini::sendRequest("gemini://gemini.circumlunar.space/"
+    trantor::Logger::setLogLevel(trantor::Logger::LogLevel::kTrace);
+    dremini::sendRequest("gemini://kvothe.one/robots.txt"
         , [](ReqResult result, const HttpResponsePtr& resp) {
             if(result == ReqResult::BadResponse)
                 LOG_ERROR << "BadResponse";
@@ -22,16 +24,15 @@ int main()
                 LOG_ERROR << "Timeout";
             else if(result == ReqResult::Ok)
                 LOG_INFO << "It works!";
-            if(!resp)
-            {
+            if(!resp) {
                 LOG_ERROR << "Failed to get respond from server";
-                return;
+            }
+            else {
+                LOG_INFO << "Body size: " << resp->body().size();
             }
 
-            LOG_INFO << "Body size: " << resp->body().size();
-
             app().quit();
-    });
+    }, 1, app().getLoop(), 0xffffff, {}, 1);
 
     app().run();
 }

@@ -194,6 +194,8 @@ void GeminiClient::sendRequestInLoop()
             return;
         if(thisPtr->timeout_ > 0)
             thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
+        if(thisPtr->maxTransferDuration_ > 0)
+            thisPtr->loop_->invalidateTimer(thisPtr->transferTimerId_);
         if (err == trantor::SSLError::kSSLHandshakeError)
             thisPtr->callback_(ReqResult::HandshakeError, nullptr);
         else if (err == trantor::SSLError::kSSLInvalidCertificate)
@@ -211,6 +213,8 @@ void GeminiClient::sendRequestInLoop()
             return;
         if(thisPtr->timeout_ > 0)
             thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
+        if(thisPtr->maxTransferDuration_ > 0)
+            thisPtr->loop_->invalidateTimer(thisPtr->transferTimerId_);
         // can't connect to server
         thisPtr->callback_(ReqResult::NetworkFailure, nullptr);
     });
@@ -221,9 +225,12 @@ void GeminiClient::sendRequestInLoop()
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            if(closeReason_ != ReqResult::Ok) {
+            if(closeReason_ == ReqResult::Ok) {
                 closeReason_ = ReqResult::Timeout;
-                client_->connection()->forceClose();
+                if(client_->connection() != nullptr)
+                    client_->stop();
+                else
+                    callback_(closeReason_, nullptr);
             }
 
         });
@@ -234,9 +241,12 @@ void GeminiClient::sendRequestInLoop()
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            if(closeReason_ != ReqResult::Ok) {
+            if(closeReason_ == ReqResult::Ok) {
                 closeReason_ = ReqResult::Timeout;
-                client_->connection()->forceClose();
+                if(client_->connection() != nullptr)
+                    client_->stop();
+                else
+                    callback_(closeReason_, nullptr);
             }
 
         });
