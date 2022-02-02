@@ -306,15 +306,15 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         return;
     }
 
-    auto weakPtr = weak_from_this();
     if(timeout_ > 0)
     {
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr, connPtr, this](){
+        auto weakPtr = weak_from_this();
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr, connPtr](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            if(closeReason_ != ReqResult::Ok) {
-                closeReason_ = ReqResult::Timeout;
+            if(thisPtr->closeReason_ != ReqResult::Ok) {
+                thisPtr->closeReason_ = ReqResult::Timeout;
                 connPtr->forceClose();
             }
         });
