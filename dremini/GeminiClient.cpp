@@ -96,7 +96,7 @@ void GeminiClient::fire()
         return;
     }
     loop_->runInLoop([thisPtr = shared_from_this()](){
-        thisPtr->resolver_ = trantor::Resolver::newResolver(thisPtr->loop_);
+        thisPtr->resolver_ = trantor::Resolver::newResolver(thisPtr->loop_, 10);
         thisPtr->resolver_->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
             if(addr.ipNetEndian() == 0)
             {
@@ -229,8 +229,7 @@ void GeminiClient::sendRequestInLoop()
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr)
                     client_->stop();
-                else
-                    callback_(closeReason_, nullptr);
+                callback_(closeReason_, nullptr);
             }
 
         });
@@ -245,8 +244,7 @@ void GeminiClient::sendRequestInLoop()
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr)
                     client_->stop();
-                else
-                    callback_(closeReason_, nullptr);
+                callback_(closeReason_, nullptr);
             }
 
         });
