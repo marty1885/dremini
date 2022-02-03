@@ -123,8 +123,8 @@ an apporiprate category. Here's a list of conversions
 |200 |20    |
 |400 |59    |
 |404 |51    |
+|429 |44    |
 |502 |43    |
-|503 |44    |
 |504 |43    |
 
 If the returned HTTP status is not listed above. The Gemini status is simply the HTTP status divied by 100. **Exception being 4

@@ -108,7 +108,7 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
         status = 51;
     else if(httpStatus == 502 || httpStatus == 504) // 502/504 (Bad gateway/Gateway Timeout) -> 43 (Proxy Error)
         status = 43;
-    else if(httpStatus == 503) // 503(Service Unavailable) -> 44 (Slow Down)
+    else if(httpStatus == 429) // 429 (Too Many Requests) -> 44 (Slow Down)
         status = 44;
     else if(httpStatus%100 == 2) // Success -> Success
         status = 20;
@@ -143,6 +143,15 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
             respHeader = std::to_string(status) + " " + resp->getHeader("location") + "\r\n";
         else
             respHeader = std::to_string(status) + " " + resp->getHeader("meta") + "\r\n";
+    }
+    else if(status == 44)
+    {
+        std::string meta = resp->getHeader("Retry-After");
+        if(meta.empty())
+            meta = resp->getHeader("meta");
+        if(meta.empty())
+            meta = "30"; // XXX: Default 30s retry
+        respHeader = std::to_string(status) + " " + meta + "\r\n";
     }
     else if(status/10 == 4)
     {
