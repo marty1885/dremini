@@ -277,6 +277,20 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             // TODO: Handle status 11 - sensitive input
             if(int(resp->statusCode())/10 == 1 && req->getHeader("protocol") == "")
                 resp->setStatusCode(k418ImATeapot);
+
+            // Fix gemini-style query parameter. Gemini only accepts a single query apameter in the form of
+            // gemini://example.com/foo?some_data . But HTTP expects a query parameter in the form of
+            // http://example.com/foo?query=some_data . So we need to fix it.
+            if(int(resp->statusCode())/100 == 3 && req->getHeader("protocol") == "") {
+                auto query = resp->getHeader("location").find('?');
+                if(query == std::string::npos)
+                    return;
+                auto param = resp->getHeader("location").substr(query+1);
+                if(param.find('=') != std::string::npos)
+                    return;
+                std::string path = resp->getHeader("location").substr(0, query+1);
+                resp->addHeader("location", path + "query=" + param);
+            }
         });
         app().registerPreSendingAdvice([](const HttpRequestPtr& req, const HttpResponsePtr& resp) {
             if(req->getHeader("protocol") == "" && resp->contentTypeString().find("text/gemini") == 0)
