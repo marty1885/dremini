@@ -106,6 +106,7 @@ pre {
 	padding: 1rem;
 	overflow-x: auto;
         line-height: calc(1em + 1px);
+        font-family: 'consolas'
 }
 
 details:not([open]) summary,
