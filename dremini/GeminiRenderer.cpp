@@ -144,6 +144,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
     auto nodes = parseGemini(gmi_source);
 
     bool last_is_list = false;
+    bool last_is_backquote = false;
     for(const auto& node : nodes) {
         std::string text = HttpViewData::htmlTranslate(node.text);
 
@@ -152,6 +153,8 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
 
         if(node.type != "list" && last_is_list == true)
             res += "</ul>\n";
+        if(node.type != "quote" && last_is_backquote == true)
+            res += "</blockquote>\n";
 
         if(node.type == "text") {
             if(extended_mode) {
@@ -173,8 +176,6 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
             res += "<h2>"+text+"</h2>\n";
         else if(node.type == "heading3")
             res += "<h3>"+text+"</h3>\n";
-        else if(node.type == "quote")
-            res += "<blockquote>"+text+"</blockquote>\n";
         else if(node.type == "link")
         {
             if(text.empty())
@@ -212,6 +213,17 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
         }
         else {
             last_is_list = false;
+        }
+
+        if(node.type == "quote")
+        {
+            if(last_is_backquote == false)
+                res += "<blockquote>\n";
+            res += (last_is_backquote ? "<br>" : "") + text;
+            last_is_backquote = true;
+        }
+        else {
+            last_is_backquote = false;
         }
     }
     return {res, HttpViewData::htmlTranslate(title)};
