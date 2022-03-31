@@ -18,6 +18,10 @@ namespace dremini
  *    ===
  * - `` pairs treated as inline code block:
  *   `code`
+ * - * and _ pairs treated as italic:
+ *   *some text* or _some text_
+ * - ** and __ pairs treated as bold:
+ *  **some text** or __some text__
  */
 std::pair<std::string, std::string> render2Html(const std::string_view gemini_src, bool extended_mode = false);
 

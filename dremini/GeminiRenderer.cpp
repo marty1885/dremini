@@ -3,8 +3,127 @@
 #include <drogon/utils/Utilities.h>
 #include <drogon/HttpViewData.h>
 
+#include <stack>
+#include <deque>
+
 using namespace drogon;
 using namespace dremini;
+
+struct ParserState
+{
+    std::string result;
+    size_t pos = 0;
+    bool in_code = false;
+    bool in_italic = false;
+    bool in_strong = false;
+    std::stack<std::string> styles;
+};
+
+static std::string renderPlainText(const std::string_view input)
+{
+    std::deque<ParserState> state_stack;
+    state_stack.push_front({});
+
+    while(!state_stack.empty()) {
+        auto& state = state_stack.front();
+        // Finish parsing. Return if we are in an accept state.
+        if(state.pos >= input.size()) {
+            if(state.styles.empty())
+                return state.result;
+            else {
+                std::swap(*state_stack.begin(), *state_stack.rbegin());
+                state_stack.pop_back();
+                continue;
+            }
+        }
+
+        const char ch = input[state.pos++];
+        if(ch == '`') {
+            if(state.in_code && !state.styles.empty() && state.styles.top() == "code") {
+                state.in_code = false;
+                state.result += "</code>";
+                state.styles.pop();
+            } else if(state.in_code == false) {
+                auto backtrack_state = state;
+                backtrack_state.result += ch;
+                state_stack.push_back(backtrack_state);
+
+                state.in_code = true;
+                state.result += "<code>";
+                state.styles.push("code");
+            }
+        }
+        else if((ch == '*' || ch == '_') && !state.in_code) {
+            bool could_be_strong = state.pos < input.size() && input[state.pos] == ch;
+
+            if(could_be_strong) {
+                auto italic_state = state;
+                bool prev_is_space = state.pos > 2 && input[state.pos - 2] == ' ';
+                state.pos += 1;
+                bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
+
+                if(state.in_strong && !state.styles.empty() && state.styles.top() == "strong" && !prev_is_space) {
+                    state.in_strong = false;
+                    state.result += "</strong>";
+                    state.styles.pop();
+                } else if(state.in_strong == false && !next_is_space) {
+                    auto backtrack_state = state;
+                    backtrack_state.result += std::string(2, ch);
+                    state_stack.push_back(backtrack_state);
+
+                    state.in_strong = true;
+                    state.result += "<strong>";
+                    state.styles.push("strong");
+                } else {
+                    state.result += std::string(2, ch);
+                }
+                
+                if(italic_state.in_italic && !italic_state.styles.empty() && italic_state.styles.top() == "italic") {
+                    italic_state.in_italic = false;
+                    italic_state.result += "</i>";
+                    italic_state.styles.pop();
+                    state_stack.push_back(italic_state);
+                } else if(italic_state.in_italic == false) {
+                    auto backtrack_state = italic_state;
+                    backtrack_state.result += ch;
+                    state_stack.push_back(backtrack_state);
+
+                    italic_state.in_italic = true;
+                    italic_state.result += "<i>";
+                    italic_state.styles.push("italic");
+                    state_stack.push_back(italic_state);
+                } else {
+                    state.result += ch;
+                }
+
+            }
+            else {
+                bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
+                bool prev_is_space = state.pos > 2 && input[state.pos - 2] == ' ';
+                if(state.in_italic && !state.styles.empty() && state.styles.top() == "italic" && !prev_is_space) {
+                    state.in_italic = false;
+                    state.result += "</i>";
+                    state.styles.pop();
+                } else if(state.in_italic == false && !next_is_space) {
+                    auto backtrack_state = state;
+                    backtrack_state.result += ch;
+                    state_stack.push_back(backtrack_state);
+
+                    state.in_italic = true;
+                    state.result += "<i>";
+                    state.styles.push("italic");
+                } else {
+                    state.result += ch;
+                }
+            }
+        }
+        else {
+            state.result += ch;
+        }
+    }
+
+    throw std::runtime_error("Parser ended in an invalid state. This is a bug.");
+}
 
 static bool isSingleCharRepeat(const std::string &str)
 {
@@ -16,35 +135,6 @@ static bool isSingleCharRepeat(const std::string &str)
             return false;
     }
     return true;
-}
-
-static std::string renderPlainText(const std::string &text)
-{
-    // scan for `` pairs. If found, add the text in the pair as a code block
-    std::string res;
-    std::string current_text;
-    bool in_code_block = false;
-    for(auto c : text) {
-        if(c == '`' && !in_code_block) {
-            in_code_block = true;
-            if(!current_text.empty()) {
-                res += current_text;
-                current_text.clear();
-            }
-        } else if(c == '`' && in_code_block) {
-            in_code_block = false;
-            if(!current_text.empty()) {
-                res += "<code>" + current_text + "</code>";
-                current_text.clear();
-            }
-        } else {
-            current_text += c;
-        }
-    }
-    if(in_code_block)
-        return res+"`"+current_text;
-    else
-        return res+current_text;
 }
 
 std::pair<std::string, std::string> dremini::render2Html(const std::string_view gmi_source, bool extended_mode)
