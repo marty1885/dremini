@@ -85,7 +85,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.text = sm[1];
                     node.type = "heading1";
                 }
-                else if(startsWith(line, "*")) {
+                else if(startsWith(line, "* ")) {
                     const static std::regex re(" *\\* *(.*)");
                     std::smatch sm;
                     std::regex_match(node.orig_text, sm, re);

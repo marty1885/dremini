@@ -93,7 +93,7 @@ static std::string renderPlainText(const std::string_view input)
                     italic_state.styles.push("italic");
                     state_stack.push_back(italic_state);
                 } else {
-                    state.result += ch;
+                    italic_state.result += ch;
                 }
 
             }
@@ -226,5 +226,9 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
             last_is_backquote = false;
         }
     }
+    if(last_is_backquote)
+        res += "</backquote>\n";
+    else if(last_is_list)
+        res += "</ul>\n";
     return {res, HttpViewData::htmlTranslate(title)};
 }

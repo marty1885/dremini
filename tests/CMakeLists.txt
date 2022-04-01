@@ -17,3 +17,7 @@ add_custom_command(
 add_executable(test_client test_client/test_client.cpp)
 target_link_libraries(test_client PRIVATE dremini)
 ParseAndAddDrogonTests(test_client)
+
+add_executable(unittest unittest/main.cpp unittest/gemini_renderer_test.cpp)
+target_link_libraries(unittest PRIVATE dremini)
+ParseAndAddDrogonTests(unittest)
