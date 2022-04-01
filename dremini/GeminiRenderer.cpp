@@ -21,6 +21,10 @@ struct ParserState
 
 static std::string renderPlainText(const std::string_view input)
 {
+    // No special character -> No need to parse
+    if(input.find_first_of("*_`") == std::string_view::npos)
+        return std::string(input);
+
     std::deque<ParserState> state_stack;
     state_stack.push_front({});
 
@@ -37,6 +41,16 @@ static std::string renderPlainText(const std::string_view input)
             }
         }
 
+        // Process all normal text in a single go. Faster then character by character
+        auto remain = input.substr(state.pos);
+        auto n = remain.find_first_of("`*_");
+        if(n == std::string_view::npos) {
+            state.result += remain;
+            state.pos = input.size();
+            continue;
+        }
+        state.result += remain.substr(0, n);
+        state.pos += n;
         const char ch = input[state.pos++];
         if(ch == '`') {
             if(state.in_code && !state.styles.empty() && state.styles.top() == "code") {
