@@ -17,6 +17,7 @@ DROGON_TEST(GeminiRenderer)
     CHECK(render2Html("**asd**").first == "<p>**asd**</p>\n");
     CHECK(render2Html("* asd").first == "<ul>\n  <li>asd</li>\n</ul>\n");
     CHECK(render2Html("* *asd*").first == "<ul>\n  <li>*asd*</li>\n</ul>\n");
+    CHECK(render2Html("*asd_").first == "<p>*asd_</p>\n");
 }
 
 DROGON_TEST(GeminiRendererExtended)
@@ -36,4 +37,6 @@ DROGON_TEST(GeminiRendererExtended)
     CHECK(render2Html("**asd**", true).first == "<p><strong>asd</strong></p>\n");
     CHECK(render2Html("* asd", true).first == "<ul>\n  <li>asd</li>\n</ul>\n");
     CHECK(render2Html("* *asd*", true).first == "<ul>\n  <li><i>asd</i></li>\n</ul>\n");
+    CHECK(render2Html("*asd_", true).first == "<p>*asd_</p>\n");
+    CHECK(render2Html("*asd_*", true).first == "<p><i>asd_</i></p>\n");
 }
