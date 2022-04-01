@@ -5,6 +5,7 @@
 
 #include <stack>
 #include <deque>
+#include <string_view>
 
 using namespace drogon;
 using namespace dremini;
@@ -17,6 +18,7 @@ struct ParserState
     bool in_italic = false;
     bool in_strong = false;
     std::stack<std::string> styles;
+    std::stack<char> style_symbols;
 };
 
 static std::string renderPlainText(const std::string_view input)
@@ -62,10 +64,12 @@ static std::string renderPlainText(const std::string_view input)
                 state.pos += 1;
                 bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
 
-                if(state.in_strong && !state.styles.empty() && state.styles.top() == "strong" && !prev_is_space) {
+                if(state.in_strong && !state.styles.empty() && state.styles.top() == "strong" && !prev_is_space
+                    && state.style_symbols.top() == ch) {
                     state.in_strong = false;
                     state.result += "</strong>";
                     state.styles.pop();
+                    state.style_symbols.pop();
                 } else if(state.in_strong == false && !next_is_space) {
                     auto backtrack_state = state;
                     backtrack_state.result += std::string(2, ch);
@@ -74,14 +78,17 @@ static std::string renderPlainText(const std::string_view input)
                     state.in_strong = true;
                     state.result += "<strong>";
                     state.styles.push("strong");
+                    state.style_symbols.push(ch);
                 } else {
                     state.result += std::string(2, ch);
                 }
                 
-                if(italic_state.in_italic && !italic_state.styles.empty() && italic_state.styles.top() == "italic") {
+                if(italic_state.in_italic && !italic_state.styles.empty() && italic_state.styles.top() == "italic"
+                    && italic_state.style_symbols.top() == ch) {
                     italic_state.in_italic = false;
                     italic_state.result += "</i>";
                     italic_state.styles.pop();
+                    italic_state.style_symbols.pop();
                     state_stack.push_back(italic_state);
                 } else if(italic_state.in_italic == false) {
                     auto backtrack_state = italic_state;
@@ -91,6 +98,7 @@ static std::string renderPlainText(const std::string_view input)
                     italic_state.in_italic = true;
                     italic_state.result += "<i>";
                     italic_state.styles.push("italic");
+                    italic_state.style_symbols.push(ch);
                     state_stack.push_back(italic_state);
                 } else {
                     italic_state.result += ch;
@@ -100,10 +108,12 @@ static std::string renderPlainText(const std::string_view input)
             else {
                 bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
                 bool prev_is_space = state.pos > 2 && input[state.pos - 2] == ' ';
-                if(state.in_italic && !state.styles.empty() && state.styles.top() == "italic" && !prev_is_space) {
+                if(state.in_italic && !state.styles.empty() && state.styles.top() == "italic" && !prev_is_space
+                    && state.style_symbols.top() == ch) {
                     state.in_italic = false;
                     state.result += "</i>";
                     state.styles.pop();
+                    state.style_symbols.pop();
                 } else if(state.in_italic == false && !next_is_space) {
                     auto backtrack_state = state;
                     backtrack_state.result += ch;
@@ -112,6 +122,7 @@ static std::string renderPlainText(const std::string_view input)
                     state.in_italic = true;
                     state.result += "<i>";
                     state.styles.push("italic");
+                    state.style_symbols.push(ch);
                 } else {
                     state.result += ch;
                 }
