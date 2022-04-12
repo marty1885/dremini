@@ -9,7 +9,7 @@ using namespace dremini;
 
 int main()
 {
-    //app().setLogLevel(Logger::LogLevel::kTrace);
+    // app().setLogLevel(trantor::Logger::LogLevel::kTrace);
     app().registerHandler("/random_number",
         [](const HttpRequestPtr& req,
            std::function<void (const HttpResponsePtr &)> &&callback)
