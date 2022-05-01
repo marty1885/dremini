@@ -74,6 +74,17 @@ static std::string renderPlainText(const std::string_view input)
 
             if(could_be_strong) {
                 auto italic_state = state;
+                bool prev_is_allowed = false;
+                // * is allowed anywhere in the text. But _ must proceed with a space, * or line start
+                if(ch == '*') {
+                    prev_is_allowed = true;
+                } else {
+                    // _ must be preceded by a space, * or line start
+                    if(state.pos > 2 && (input[state.pos - 2] == ' ' || input[state.pos - 2] == '*'))
+                        prev_is_allowed = true;
+                    else if(state.pos-1 == 0)
+                        prev_is_allowed = true;
+                }
                 bool prev_is_space = state.pos > 2 && input[state.pos - 2] == ' ';
                 state.pos += 1;
                 bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
@@ -84,7 +95,7 @@ static std::string renderPlainText(const std::string_view input)
                     state.result += "</strong>";
                     state.styles.pop();
                     state.style_symbols.pop();
-                } else if(state.in_strong == false && !next_is_space) {
+                } else if(state.in_strong == false && !next_is_space && prev_is_allowed) {
                     auto backtrack_state = state;
                     backtrack_state.result += std::string(2, ch);
                     state_stack.push_back(backtrack_state);
@@ -104,7 +115,7 @@ static std::string renderPlainText(const std::string_view input)
                     italic_state.styles.pop();
                     italic_state.style_symbols.pop();
                     state_stack.push_back(italic_state);
-                } else if(italic_state.in_italic == false) {
+                } else if(italic_state.in_italic == false && !next_is_space && prev_is_allowed) {
                     auto backtrack_state = italic_state;
                     backtrack_state.result += ch;
                     state_stack.push_back(backtrack_state);
@@ -122,13 +133,24 @@ static std::string renderPlainText(const std::string_view input)
             else {
                 bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
                 bool prev_is_space = state.pos > 2 && input[state.pos - 2] == ' ';
+                bool prev_is_allowed = false;
+                // * is allowed anywhere in the text. But _ must proceed with a space, * or line start
+                if(ch == '*') {
+                    prev_is_allowed = true;
+                } else {
+                    // _ must be preceded by a space, * or line start
+                    if(state.pos > 2 && (input[state.pos - 2] == ' ' || input[state.pos - 2] == '*'))
+                        prev_is_allowed = true;
+                    else if(state.pos-1 == 0)
+                        prev_is_allowed = true;
+                }
                 if(state.in_italic && !state.styles.empty() && state.styles.top() == "italic" && !prev_is_space
                     && state.style_symbols.top() == ch) {
                     state.in_italic = false;
                     state.result += "</i>";
                     state.styles.pop();
                     state.style_symbols.pop();
-                } else if(state.in_italic == false && !next_is_space) {
+                } else if(state.in_italic == false && !next_is_space && prev_is_allowed) {
                     auto backtrack_state = state;
                     backtrack_state.result += ch;
                     state_stack.push_back(backtrack_state);
@@ -150,12 +172,12 @@ static std::string renderPlainText(const std::string_view input)
     throw std::runtime_error("Parser ended in an invalid state. This is a bug.");
 }
 
-static bool isSingleCharRepeat(const std::string &str)
+static bool isSingleCharRepeat(const std::string_view str)
 {
     if(str.empty())
         return false;
-    char ch = str[0];
-    for(auto c : str) {
+    const char ch = str[0];
+    for(const auto c : str) {
         if(c != ch)
             return false;
     }
@@ -223,13 +245,19 @@ std::pair<std::string, std::string> dremini::render2Html(const std::string_view 
             }
             // Open new tab if external link
             // HACK: Port TLGS's URL parser and use that to determine if external link
-            bool is_external = meta.find("://") != 0;
+            bool is_external = meta.find("://") != std::string::npos;
             std::string target = is_external ? "_blank" : "_self";
             res += "<div class=\"link\"><a href=\""+meta+"\" target=\""+target+"\">"+text+"</a></div>\n";
         }
-        else if(node.type == "preformatted_text")
-            res += "<pre><code>"+text+"</code></pre>\n";
-
+        else if(node.type == "preformatted_text") {
+            bool meta_could_be_language = node.meta.find_first_of(" *'\"/\\()[]{};><`") == std::string::npos
+                && node.meta == utils::urlEncode(node.meta) && !node.meta.empty();
+            if(extended_mode && meta_could_be_language) {
+                res += "<pre><code class=\"language-"+node.meta+"\">"+text+"</code></pre>\n";
+            }
+            else
+                res += "<pre><code>"+text+"</code></pre>\n";
+        }
         if(node.type == "list") {
             if(last_is_list == false)
                 res += "<ul>\n";

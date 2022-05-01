@@ -28,7 +28,8 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
     std::vector<GeminiASTNode> nodes;
     size_t last_pos = 0;
     bool in_preformatted_text = false;
-    size_t preformatted_text_start = 0; 
+    size_t preformatted_text_start = 0;
+    std::string preformatted_text_meta = "";
     for(size_t i=0;i<str.size()+1;i++) {
         if((i == str.size() && str[i-1] != '\n')|| str[i] == '\n') {
             if(in_preformatted_text == false) {
@@ -100,6 +101,10 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.type = "quote";
                 }
                 else if(startsWith(line, "```")) {
+                    const static std::regex re("```(.*)");
+                    std::smatch sm;
+                    std::regex_match(node.orig_text, sm, re);
+                    preformatted_text_meta = sm[1];
                     in_preformatted_text = true;
                     preformatted_text_start = last_pos;
                     last_pos = i+1;
@@ -138,6 +143,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                             content += line + "\n";
                     }
                     node.text = content;
+                    node.meta = preformatted_text_meta;
                     node.type = "preformatted_text";
                     in_preformatted_text = false;
                     nodes.emplace_back(std::move(node));
