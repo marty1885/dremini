@@ -36,6 +36,10 @@ void GeminiServer::setIoThreadNum(size_t n)
 
 void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 {
+    if(conn->getContext<bool>() != nullptr) {
+        LOG_WARN << "Extra message received for gemini connection";
+        return;
+    }
     if(buf->readableBytes() > 1024) // Gemini spec: max 1024 byte request
     {
         auto resp = HttpResponse::newHttpResponse();
@@ -49,6 +53,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         return;
 
     std::string url(buf->peek(), std::distance(buf->peek(), crlf));
+    buf->retrieveAll();
 
     static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?(\/$|$|\/[^?]*)(?:\?(.*))?)");
     std::smatch match;
@@ -80,6 +85,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         // XXX: Properbally data race. But it happens rare enough
         roundRobbinIdx_ = 0;
     }
+    conn->setContext(std::make_shared<bool>(true));
     idx = idx % app().getThreadNum();
     // Drogon only accepts request from it's own event loops
     app().getIOLoop(idx)->runInLoop([req=std::move(req), conn=std::move(conn), this](){
