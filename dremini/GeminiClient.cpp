@@ -227,8 +227,8 @@ void GeminiClient::sendRequestInLoop()
                 return;
             if(closeReason_ == ReqResult::Ok) {
                 closeReason_ = ReqResult::Timeout;
-                if(client_->connection() != nullptr)
-                    client_->stop();
+                if(client_->connection() != nullptr && client_->connection()->connected())
+                    client_->disconnect();
                 callback_(closeReason_, nullptr);
             }
 
@@ -242,8 +242,8 @@ void GeminiClient::sendRequestInLoop()
                 return;
             if(closeReason_ == ReqResult::Ok) {
                 closeReason_ = ReqResult::Timeout;
-                if(client_->connection() != nullptr)
-                    client_->stop();
+                if(client_->connection() != nullptr && client_->connection()->connected())
+                    client_->disconnect();
                 callback_(closeReason_, nullptr);
             }
 
