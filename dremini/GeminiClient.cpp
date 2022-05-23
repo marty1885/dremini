@@ -179,7 +179,7 @@ void GeminiClient::sendRequestInLoop()
                 auto end = meta_.find(";");
                 if(end == std::string::npos)
                     end = meta_.size();
-                std::string ct(meta_.begin(), meta_.begin()+end);
+                std::string_view ct(meta_.c_str(), end);
                 resp->setContentTypeCodeAndCustomString(parseContentType(ct), meta_);
                 resp->addHeader("content-type", meta_);
             }
@@ -228,7 +228,7 @@ void GeminiClient::sendRequestInLoop()
             if(closeReason_ == ReqResult::Ok) {
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr && client_->connection()->connected())
-                    client_->disconnect();
+                    client_->connection()->forceClose();
                 callback_(closeReason_, nullptr);
             }
 
@@ -243,7 +243,7 @@ void GeminiClient::sendRequestInLoop()
             if(closeReason_ == ReqResult::Ok) {
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr && client_->connection()->connected())
-                    client_->disconnect();
+                    client_->connection()->forceClose();
                 callback_(closeReason_, nullptr);
             }
 
