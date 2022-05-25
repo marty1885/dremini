@@ -326,17 +326,15 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
     , double maxTransferDuration)
 {
-    auto client = new ::dremini::internal::GeminiClient(url, loop, timeout, maxBodySize, maxTransferDuration);
+    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
     client->setCallback([callback, client, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
-        static bool first = true;
-        if(first == false)
+        if(client == nullptr)
             return;
-        first = false;
         callback(result, resp);
         loop->queueInLoop([client]() mutable{
-            delete client;
-            client = nullptr;
+            // client is destroyed here
         });
+        client = nullptr;
     });
     client->setMimes(mimes);
     client->fire();
