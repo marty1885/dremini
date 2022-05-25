@@ -326,15 +326,17 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
     , double maxTransferDuration)
 {
-    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
-    client->setCallback([callback, client] (ReqResult result, const HttpResponsePtr& resp) mutable {
-        // HACK: It's possible for this callback to be triggered multiple times. I don't know why but that causes
-        // segfaults. So we check if this is the first time this callback is called. This IS NOT a UB since the client
-        // can hold a reference to itself.
-        if(client == nullptr)
+    auto client = new ::dremini::internal::GeminiClient(url, loop, timeout, maxBodySize, maxTransferDuration);
+    client->setCallback([callback, client, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
+        static bool first = true;
+        if(first == false)
             return;
+        first = false;
         callback(result, resp);
-        client = nullptr;
+        loop->queueInLoop([client]() mutable{
+            delete client;
+            client = nullptr;
+        });
     });
     client->setMimes(mimes);
     client->fire();
