@@ -42,6 +42,7 @@ public:
         downloadMimes_ = mimes;
     }
 
+    std::shared_ptr<trantor::TcpClient> client_;
 protected:
     void sendRequestInLoop();
     void onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
@@ -57,7 +58,6 @@ protected:
     short port_;
     bool needNameResolve_;
     trantor::EventLoop* loop_;
-    std::shared_ptr<trantor::TcpClient> client_;
     std::shared_ptr<trantor::Resolver> resolver_;
     trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;

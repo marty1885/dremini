@@ -328,6 +328,7 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
 {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
     client->setCallback([callback, client, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
+        client->client_ = nullptr;
         if(client == nullptr)
             return;
         callback(result, resp);
