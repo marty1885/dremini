@@ -322,20 +322,35 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
 }
 
+static std::map<int, std::shared_ptr<internal::GeminiClient>> holder;
+static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
     , double maxTransferDuration)
 {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
-    client->setCallback([callback, client, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
-        client->client_ = nullptr;
-        if(client == nullptr)
+    int id;
+    {
+        std::lock_guard lock(holderMutex);
+        for(id = std::abs(rand())+1; holder.find(id) != holder.end(); id = std::abs(rand())+1);
+        holder[id] = client;
+    }
+    client->setCallback([callback, id, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
+        // HACK: Prevent multiple calls to callback
+        if(id == 0)
             return;
+        int clientId = id;
+        id = 0;
+
         callback(result, resp);
-        loop->queueInLoop([client]() mutable{
+
+        std::lock_guard lock(holderMutex);
+        auto it = holder.find(clientId);
+        loop->queueInLoop([client = it->second]() {
             // client is destroyed here
         });
-        client = nullptr;
+        it->second->client_ = nullptr;
+        holder.erase(it);
     });
     client->setMimes(mimes);
     client->fire();
