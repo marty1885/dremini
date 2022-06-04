@@ -202,7 +202,7 @@ static const std::string_view userInputTemplate = R"zz(
 </style>
 <form action="" method="get">
     <p>__THIS_IS_THIS_TITLE_123456789__</p>
-    <input type="text" name="query">
+    <input type="__THIS_IS_TYPE_123456789__" name="query">
     <input type="submit">
 </form>
 </body>
@@ -269,16 +269,15 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
     {
         // Convert gemini into HTML if approprate
         app().registerPostHandlingAdvice([](const HttpRequestPtr& req, const HttpResponsePtr& resp) {
-            // HACK: Use 418 as a marker to indicate this is a Gemini status 10 (INPUT).
-            // Otherwise drogon drops http responses < 100
-            // TODO: Handle status 11 - sensitive input
-            if(int(resp->statusCode())/10 == 1 && req->getHeader("protocol") == "")
-                resp->setStatusCode(k418ImATeapot);
+            // if the response is a gemini response, ignore post handling
+            if (req->getHeader("protocol") != "")
+                return;
 
+            resp->addHeader("gemini-status", std::to_string(resp->getStatusCode()));
             // Fix gemini-style query parameter. Gemini only accepts a single query apameter in the form of
             // gemini://example.com/foo?some_data . But HTTP expects a query parameter in the form of
             // http://example.com/foo?query=some_data . So we need to fix it.
-            if(int(resp->statusCode())/100 == 3 && req->getHeader("protocol") == "") {
+            if(int(resp->statusCode())/100 == 3) {
                 auto query = resp->getHeader("location").find('?');
                 if(query == std::string::npos)
                     return;
@@ -290,7 +289,10 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             }
         });
         app().registerPreSendingAdvice([](const HttpRequestPtr& req, const HttpResponsePtr& resp) {
-            if(req->getHeader("protocol") == "" && resp->contentTypeString().find("text/gemini") == 0)
+            if(req->getHeader("protocol") != "")
+                return;
+
+            if(resp->contentTypeString().find("text/gemini") == 0)
             {
                 auto [body, title] = render2Html(resp->body());
                 if(title.empty())
@@ -303,13 +305,15 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 resp->setBody(html);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
-            else if(resp->statusCode() == k418ImATeapot)
+            else if(std::stoi(resp->getHeader("gemini-status"))/10 == 0)
             {
+                bool sensitive_input = req->getHeader("gemini-status") == "11";
                 std::string html = std::string(userInputTemplate);
                 std::string title = resp->getHeader("meta");
                 // HACK: Should use a more effectent way to compile HTML
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_TITLE_123456789__", title);
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
+                drogon::utils::replaceAll(html, "__THIS_IS_TYPE_123456789__", sensitive_input ? "password" : "text");
                 resp->setBody(html);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
