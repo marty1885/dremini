@@ -211,10 +211,6 @@ static const std::string_view userInputTemplate = R"zz(
 
 void GeminiServerPlugin::initAndStart(const Json::Value& config)
 {
-    app().getLoop()->runOnQuit([this]{
-        servers_.clear();
-    });
-
     int numThread = config.get("numThread", 1).asInt();
     if(numThread < 0)
     {
