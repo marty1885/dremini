@@ -197,14 +197,16 @@ void GeminiClient::sendRequestInLoop()
         if(thisPtr->maxTransferDuration_ > 0)
             thisPtr->loop_->invalidateTimer(thisPtr->transferTimerId_);
         if (err == trantor::SSLError::kSSLHandshakeError)
-            thisPtr->callback_(ReqResult::HandshakeError, nullptr);
+            thisPtr->closeReason_ = ReqResult::HandshakeError;
         else if (err == trantor::SSLError::kSSLInvalidCertificate)
-            thisPtr->callback_(ReqResult::InvalidCertificate, nullptr);
+            thisPtr->closeReason_ = ReqResult::InvalidCertificate;
         else
         {
             LOG_FATAL << "Invalid value for SSLError";
             abort();
         }
+        if(thisPtr->client_->connection() != nullptr)
+            thisPtr->client_->connection()->forceClose();
     });
 
     client_->setConnectionErrorCallback([weakPtr]() {
@@ -229,7 +231,6 @@ void GeminiClient::sendRequestInLoop()
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr && client_->connection()->connected())
                     client_->connection()->forceClose();
-                callback_(closeReason_, nullptr);
             }
 
         });
@@ -244,7 +245,6 @@ void GeminiClient::sendRequestInLoop()
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr && client_->connection()->connected())
                     client_->connection()->forceClose();
-                callback_(closeReason_, nullptr);
             }
 
         });
@@ -307,13 +307,14 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     if(timeout_ > 0)
     {
         auto weakPtr = weak_from_this();
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr, connPtr](){
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
             if(thisPtr->closeReason_ != ReqResult::Ok) {
                 thisPtr->closeReason_ = ReqResult::Timeout;
-                connPtr->forceClose();
+            if(thisPtr->client_->connection() != nullptr && thisPtr->client_->connection()->connected())
+                    thisPtr->client_->connection()->forceClose();
             }
         });
     }       
