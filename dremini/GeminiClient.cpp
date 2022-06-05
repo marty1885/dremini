@@ -100,7 +100,7 @@ void GeminiClient::fire()
         thisPtr->resolver_->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
             if(addr.ipNetEndian() == 0)
             {
-                thisPtr->callback_(ReqResult::BadServerAddress, nullptr);
+                thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
                 return;
             }
             trantor::InetAddress address(addr.toIp(), thisPtr->port_, addr.isIpV6());
@@ -108,6 +108,69 @@ void GeminiClient::fire()
             thisPtr->sendRequestInLoop();
         });
     });
+}
+
+void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer* msg)
+{
+    loop_->assertInLoopThread();
+    if(callbackCalled_ == true)
+        return;
+    callbackCalled_ = true;
+
+    if(timeout_ > 0)
+        loop_->invalidateTimer(timeoutTimerId_);
+    if(maxTransferDuration_ > 0)
+        loop_->invalidateTimer(transferTimerId_);
+    if(result != ReqResult::Ok)
+    {
+        client_ = nullptr;
+        callback_(result, nullptr);
+        return;
+    }
+    if(!gotHeader_)
+    {
+        client_ = nullptr;
+        callback_(ReqResult::BadResponse, nullptr);
+        return;
+    }
+
+    // check ok. now we can get the body
+    auto resp = HttpResponse::newHttpResponse();
+    resp->setBody(std::string(msg->peek(), msg->peek()+msg->readableBytes()));
+    resp->addHeader("meta", meta_);
+    resp->addHeader("gemini-status", std::to_string(status_));
+    int httpStatus;
+    if(status_ == 20)
+        httpStatus = 200;
+    else if(status_ == 59)
+        httpStatus = 400;
+    else if(status_ == 51)
+        httpStatus = 404;
+    else if(status_ == 43)
+        httpStatus = 504;
+    else if(status_ == 44)
+        httpStatus = 503;
+    else if(status_%10 == 4)
+        httpStatus = 500;
+    else if(status_%10 == 5)
+        httpStatus = 400;
+    else
+        httpStatus = status_/10*100 + status_%10;
+    resp->setStatusCode((HttpStatusCode)httpStatus);
+    if(status_ >= 20 && status_ < 30)
+    {
+        auto end = meta_.find(";");
+        if(end == std::string::npos)
+            end = meta_.size();
+        std::string_view ct(meta_.c_str(), end);
+        resp->setContentTypeCodeAndCustomString(parseContentType(ct), meta_);
+        resp->addHeader("content-type", meta_);
+    }
+    else
+        resp->setContentTypeCode(CT_NONE);
+    // we need the client no more. Let's release this as soon as possible to save open file descriptors
+    client_ = nullptr;
+    callback_(ReqResult::Ok, resp);
 }
 
 void GeminiClient::sendRequestInLoop()
@@ -136,56 +199,7 @@ void GeminiClient::sendRequestInLoop()
         }
         else
         {
-            if(timeout_ > 0)
-                loop_->invalidateTimer(timeoutTimerId_);
-            if(maxTransferDuration_ > 0)
-                loop_->invalidateTimer(transferTimerId_);
-            if(closeReason_ != ReqResult::Ok)
-            {
-                callback_(closeReason_, nullptr);
-                return;
-            }
-            if(!gotHeader_)
-            {
-                callback_(ReqResult::BadResponse, nullptr);
-                return;
-            }
-
-            auto resp = HttpResponse::newHttpResponse();
-            auto msg = connPtr->getRecvBuffer();
-            resp->setBody(std::string(msg->peek(), msg->peek()+msg->readableBytes()));
-            resp->addHeader("meta", meta_);
-            resp->addHeader("gemini-status", std::to_string(status_));
-            int httpStatus;
-            if(status_ == 20)
-                httpStatus = 200;
-            else if(status_ == 59)
-                httpStatus = 400;
-            else if(status_ == 51)
-                httpStatus = 404;
-            else if(status_ == 43)
-                httpStatus = 504;
-            else if(status_ == 44)
-                httpStatus = 503;
-            else if(status_%10 == 4)
-                httpStatus = 500;
-            else if(status_%10 == 5)
-                httpStatus = 400;
-            else
-                httpStatus = status_/10*100 + status_%10;
-            resp->setStatusCode((HttpStatusCode)httpStatus);
-            if(status_ >= 20 && status_ < 30)
-            {
-                auto end = meta_.find(";");
-                if(end == std::string::npos)
-                    end = meta_.size();
-                std::string_view ct(meta_.c_str(), end);
-                resp->setContentTypeCodeAndCustomString(parseContentType(ct), meta_);
-                resp->addHeader("content-type", meta_);
-            }
-            else
-                resp->setContentTypeCode(CT_NONE);
-            callback_(ReqResult::Ok, resp);
+            haveResult(ReqResult::Ok, connPtr->getRecvBuffer());
         }
     });
     client_->setSSLErrorCallback([weakPtr](trantor::SSLError err) {
@@ -197,28 +211,22 @@ void GeminiClient::sendRequestInLoop()
         if(thisPtr->maxTransferDuration_ > 0)
             thisPtr->loop_->invalidateTimer(thisPtr->transferTimerId_);
         if (err == trantor::SSLError::kSSLHandshakeError)
-            thisPtr->closeReason_ = ReqResult::HandshakeError;
+            thisPtr->haveResult(ReqResult::HandshakeError, nullptr);
         else if (err == trantor::SSLError::kSSLInvalidCertificate)
-            thisPtr->closeReason_ = ReqResult::InvalidCertificate;
+            thisPtr->haveResult(ReqResult::InvalidCertificate, nullptr);
         else
         {
             LOG_FATAL << "Invalid value for SSLError";
             abort();
         }
-        if(thisPtr->client_->connection() != nullptr)
-            thisPtr->client_->connection()->forceClose();
     });
 
     client_->setConnectionErrorCallback([weakPtr]() {
         auto thisPtr = weakPtr.lock();
         if (!thisPtr)
             return;
-        if(thisPtr->timeout_ > 0)
-            thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
-        if(thisPtr->maxTransferDuration_ > 0)
-            thisPtr->loop_->invalidateTimer(thisPtr->transferTimerId_);
         // can't connect to server
-        thisPtr->callback_(ReqResult::NetworkFailure, nullptr);
+        thisPtr->haveResult(ReqResult::NetworkFailure, nullptr);
     });
 
     if(timeout_ > 0)
@@ -227,14 +235,7 @@ void GeminiClient::sendRequestInLoop()
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            if(closeReason_ == ReqResult::Ok) {
-                closeReason_ = ReqResult::Timeout;
-                if(client_->connection() != nullptr && client_->connection()->connected())
-                    client_->connection()->forceClose();
-                else
-                    callback_(ReqResult::Timeout, nullptr);
-            }
-
+            haveResult(ReqResult::Timeout, nullptr);
         });
     }
     if(maxTransferDuration_ > 0)
@@ -243,14 +244,7 @@ void GeminiClient::sendRequestInLoop()
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            if(closeReason_ == ReqResult::Ok) {
-                closeReason_ = ReqResult::Timeout;
-                if(client_->connection() != nullptr && client_->connection()->connected())
-                    client_->connection()->forceClose();
-                else
-                    callback_(ReqResult::Timeout, nullptr);
-            }
-
+            haveResult(ReqResult::Timeout, nullptr);
         });
     }
     client_->connect();
@@ -276,10 +270,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         if(header.size() < 2 || (header.size() >= 3 && header[2] != ' '))
         {
             // bad response
-            if(closeReason_ != ReqResult::Ok) {
-                closeReason_ = ReqResult::BadResponse;
-                connPtr->forceClose();
-            }
+            haveResult(ReqResult::BadResponse, nullptr);
             return;
         }
 
@@ -290,21 +281,20 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         {
             std::string mime = meta_.substr(0, meta_.find_first_of("; ,"));
             if(std::find(downloadMimes_.begin(), downloadMimes_.end(), mime) == downloadMimes_.end()) {
+                msg->retrieveAll();
                 LOG_TRACE << "Ignoring file of MIME " << mime;
-                connPtr->forceClose();
+                connPtr->forceClose(); // this triggers the connection close handler which will call haveResult
                 return;
             }
         }
         msg->read(std::distance(msg->peek(), crlf)+2);
     }
-    if(maxBodySize_ > 0 && msg->readableBytes() > maxBodySize_)
+    if(maxBodySize_ > 0 && msg->readableBytes() > size_t(maxBodySize_))
     {
         LOG_DEBUG << "Recived more data than " << maxBodySize_ << " bites";
         // bad response
-        if(closeReason_ != ReqResult::Ok) {
-            closeReason_ = ReqResult::BadResponse;
-            connPtr->forceClose();
-        }
+        haveResult(ReqResult::BadResponse, nullptr);
+
         return;
     }
 
@@ -315,14 +305,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            if(thisPtr->closeReason_ != ReqResult::Ok) {
-                thisPtr->closeReason_ = ReqResult::Timeout;
-
-            if(thisPtr->client_->connection() != nullptr && thisPtr->client_->connection()->connected())
-                thisPtr->client_->connection()->forceClose();
-            else
-                thisPtr->callback_(ReqResult::Timeout, nullptr);
-            }
+           thisPtr->haveResult(ReqResult::Timeout, nullptr);
         });
     }       
 }
@@ -344,20 +327,14 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
         holder[id] = client;
     }
     client->setCallback([callback, id, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
-        // HACK: Prevent multiple calls to callback
-        if(id == 0)
-            return;
-        int clientId = id;
-        id = 0;
-
         callback(result, resp);
 
         std::lock_guard lock(holderMutex);
-        auto it = holder.find(clientId);
+        auto it = holder.find(id);
+        assert(it != holder.end());
         loop->queueInLoop([client = it->second]() {
             // client is destroyed here
         });
-        it->second->client_ = nullptr;
         holder.erase(it);
     });
     client->setMimes(mimes);

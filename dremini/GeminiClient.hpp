@@ -47,8 +47,10 @@ protected:
     void sendRequestInLoop();
     void onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
                     trantor::MsgBuffer *msg);
+    void haveResult(drogon::ReqResult result, const trantor::MsgBuffer* msg);
 
     bool gotHeader_ = false;
+    trantor::EventLoop* loop_;
     double timeout_;
     drogon::HttpReqCallback callback_;
     std::string meta_;
@@ -57,15 +59,14 @@ protected:
     std::string host_;
     short port_;
     bool needNameResolve_;
-    trantor::EventLoop* loop_;
     std::shared_ptr<trantor::Resolver> resolver_;
     trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;
     intmax_t maxBodySize_;
     std::vector<std::string> downloadMimes_;
-    drogon::ReqResult closeReason_ = drogon::ReqResult::Ok;
     double maxTransferDuration_;
     trantor::TimerId transferTimerId_;
+    bool callbackCalled_ = false;
 };
 
 }
@@ -116,9 +117,9 @@ struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::
 
 private:
     std::string url_;
+    trantor::EventLoop* loop_;
     double timeout_;
     intmax_t maxBodySize_;
-    trantor::EventLoop* loop_;
     std::vector<std::string> mimes_;
     double maxTransferDuration_;
 };
