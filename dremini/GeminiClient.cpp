@@ -231,6 +231,8 @@ void GeminiClient::sendRequestInLoop()
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr && client_->connection()->connected())
                     client_->connection()->forceClose();
+                else
+                    callback_(ReqResult::Timeout, nullptr);
             }
 
         });
@@ -245,6 +247,8 @@ void GeminiClient::sendRequestInLoop()
                 closeReason_ = ReqResult::Timeout;
                 if(client_->connection() != nullptr && client_->connection()->connected())
                     client_->connection()->forceClose();
+                else
+                    callback_(ReqResult::Timeout, nullptr);
             }
 
         });
@@ -313,8 +317,11 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
                 return;
             if(thisPtr->closeReason_ != ReqResult::Ok) {
                 thisPtr->closeReason_ = ReqResult::Timeout;
+
             if(thisPtr->client_->connection() != nullptr && thisPtr->client_->connection()->connected())
-                    thisPtr->client_->connection()->forceClose();
+                thisPtr->client_->connection()->forceClose();
+            else
+                thisPtr->callback_(ReqResult::Timeout, nullptr);
             }
         });
     }       
