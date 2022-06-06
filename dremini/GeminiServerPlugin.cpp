@@ -305,7 +305,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 resp->setBody(html);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
-            else if(std::stoi(resp->getHeader("gemini-status"))/10 == 0)
+            else if(std::stoi(resp->getHeader("gemini-status"))/10 == 1)
             {
                 bool sensitive_input = req->getHeader("gemini-status") == "11";
                 std::string html = std::string(userInputTemplate);
@@ -315,6 +315,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
                 drogon::utils::replaceAll(html, "__THIS_IS_TYPE_123456789__", sensitive_input ? "password" : "text");
                 resp->setBody(html);
+                resp->setStatusCode(k200OK);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
         });
