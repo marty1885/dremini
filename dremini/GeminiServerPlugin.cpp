@@ -305,7 +305,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 resp->setBody(html);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
-            else if(std::stoi(resp->getHeader("gemini-status"))/10 == 1)
+            else if(resp->getHeader("gemini-status") != "" && std::stoi(resp->getHeader("gemini-status"))/10 == 1)
             {
                 bool sensitive_input = req->getHeader("gemini-status") == "11";
                 std::string html = std::string(userInputTemplate);
