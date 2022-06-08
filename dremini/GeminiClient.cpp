@@ -231,20 +231,20 @@ void GeminiClient::sendRequestInLoop()
 
     if(timeout_ > 0)
     {
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr, this](){
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            haveResult(ReqResult::Timeout, nullptr);
+            thisPtr->haveResult(ReqResult::Timeout, nullptr);
         });
     }
     if(maxTransferDuration_ > 0)
     {
-        transferTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr, this](){
+        transferTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr](){
             auto thisPtr = weakPtr.lock();
             if(!thisPtr)
                 return;
-            haveResult(ReqResult::Timeout, nullptr);
+            thisPtr->haveResult(ReqResult::Timeout, nullptr);
         });
     }
     client_->connect();
