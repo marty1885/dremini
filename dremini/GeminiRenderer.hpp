@@ -3,6 +3,8 @@
 #include <string>
 #include <string_view>
 
+#include "GeminiParser.hpp"
+
 namespace dremini
 {
 
@@ -24,5 +26,6 @@ namespace dremini
  *  **some text** or __some text__
  */
 std::pair<std::string, std::string> render2Html(const std::string_view gemini_src, bool extended_mode = false);
+std::pair<std::string, std::string> render2Html(const std::vector<GeminiASTNode>& nodes, bool extended_mode = false);
 
 }

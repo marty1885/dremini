@@ -186,10 +186,14 @@ static bool isSingleCharRepeat(const std::string_view str)
 
 std::pair<std::string, std::string> dremini::render2Html(const std::string_view gmi_source, bool extended_mode)
 {
+    auto nodes = parseGemini(gmi_source);
+    return render2Html(nodes, extended_mode);
+}
+
+std::pair<std::string, std::string> dremini::render2Html(const std::vector<GeminiASTNode>& nodes, bool extended_mode)
+{
     std::string res;
     std::string title;
-    auto nodes = parseGemini(gmi_source);
-
     bool last_is_list = false;
     bool last_is_backquote = false;
     for(const auto& node : nodes) {
