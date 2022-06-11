@@ -34,6 +34,10 @@ public:
     {
         callback_ = callback;
     }
+    void setCallback(drogon::HttpReqCallback&& callback)
+    {
+        callback_ = std::move(callback);
+    }
 
     // If mimes are set. The client will only download content from these MIMEs.
     // If the server returns MIMEs not in the set. The client returns an empty response with the original header
@@ -54,17 +58,17 @@ protected:
     double timeout_;
     drogon::HttpReqCallback callback_;
     std::string url_;
-    std::string host_;
-    short port_;
     intmax_t maxBodySize_;
     double maxTransferDuration_;
 
     // Internal state
-    bool gotHeader_ = false;
-    int status_ = 0;
-    std::string meta_;
+    std::string host_;
+    short port_;
+    trantor::InetAddress peerAddress_;
+    bool headerReceived_ = false;
+    int responseStatus_ = 0;
+    std::string resoneseMeta_;
     std::shared_ptr<trantor::Resolver> resolver_;
-    trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;
     std::vector<std::string> downloadMimes_;
     trantor::TimerId transferTimerId_;

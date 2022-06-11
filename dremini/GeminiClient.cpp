@@ -10,7 +10,7 @@ static bool isIPString(const std::string& str)
     return !trantor::InetAddress(str, 0, isIpV6).isUnspecified();
 }
 
-ContentType parseContentType(const string_view &contentType)
+static ContentType parseContentType(const string_view &contentType)
 {
     static const std::unordered_map<string_view, ContentType> map_{
         {"text/html", CT_TEXT_HTML},
@@ -90,7 +90,7 @@ void GeminiClient::fire()
     if(isIPString(host_))
     {
         bool isIpV6 = host_.find(":") != std::string::npos;
-        address_ = trantor::InetAddress(host_, port_, isIpV6);
+        peerAddress_ = trantor::InetAddress(host_, port_, isIpV6);
         sendRequestInLoop();
         return;
     }
@@ -101,7 +101,7 @@ void GeminiClient::fire()
             thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
             return;
         }
-        thisPtr->address_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
+        thisPtr->peerAddress_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
         thisPtr->sendRequestInLoop();
     });
 }
@@ -123,7 +123,7 @@ void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer
         callback_(result, nullptr);
         return;
     }
-    if(!gotHeader_)
+    if(!headerReceived_)
     {
         client_ = nullptr;
         callback_(ReqResult::BadResponse, nullptr);
@@ -133,34 +133,34 @@ void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer
     // check ok. now we can get the body
     auto resp = HttpResponse::newHttpResponse();
     resp->setBody(std::string(msg->peek(), msg->peek()+msg->readableBytes()));
-    resp->addHeader("meta", meta_);
-    resp->addHeader("gemini-status", std::to_string(status_));
+    resp->addHeader("meta", resoneseMeta_);
+    resp->addHeader("gemini-status", std::to_string(responseStatus_));
     int httpStatus;
-    if(status_ == 20)
+    if(responseStatus_ == 20)
         httpStatus = 200;
-    else if(status_ == 59)
+    else if(responseStatus_ == 59)
         httpStatus = 400;
-    else if(status_ == 51)
+    else if(responseStatus_ == 51)
         httpStatus = 404;
-    else if(status_ == 43)
+    else if(responseStatus_ == 43)
         httpStatus = 504;
-    else if(status_ == 44)
+    else if(responseStatus_ == 44)
         httpStatus = 503;
-    else if(status_%10 == 4)
+    else if(responseStatus_%10 == 4)
         httpStatus = 500;
-    else if(status_%10 == 5)
+    else if(responseStatus_%10 == 5)
         httpStatus = 400;
     else
-        httpStatus = status_/10*100 + status_%10;
+        httpStatus = responseStatus_/10*100 + responseStatus_%10;
     resp->setStatusCode((HttpStatusCode)httpStatus);
-    if(status_ >= 20 && status_ < 30)
+    if(responseStatus_ >= 20 && responseStatus_ < 30)
     {
-        auto end = meta_.find(";");
+        auto end = resoneseMeta_.find(";");
         if(end == std::string::npos)
-            end = meta_.size();
-        std::string_view ct(meta_.c_str(), end);
-        resp->setContentTypeCodeAndCustomString(parseContentType(ct), meta_);
-        resp->addHeader("content-type", meta_);
+            end = resoneseMeta_.size();
+        std::string_view ct(resoneseMeta_.c_str(), end);
+        resp->setContentTypeCodeAndCustomString(parseContentType(ct), resoneseMeta_);
+        resp->addHeader("content-type", resoneseMeta_);
     }
     else
         resp->setContentTypeCode(CT_NONE);
@@ -173,7 +173,7 @@ void GeminiClient::sendRequestInLoop()
 {
     // TODO: Validate certificate
     auto weakPtr = weak_from_this();
-    client_ = std::make_shared<trantor::TcpClient>(loop_, address_, "GeminiClient");
+    client_ = std::make_shared<trantor::TcpClient>(loop_, peerAddress_, "GeminiClient");
     client_->enableSSL(false, false, host_);
     client_->setMessageCallback([weakPtr](const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg) {
@@ -253,14 +253,14 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     if(timeout_ > 0)
         loop_->invalidateTimer(timeoutTimerId_);
     LOG_TRACE << "Got data from Gemini server";
-    if(!gotHeader_)
+    if(!headerReceived_)
     {
         const char* crlf = msg->findCRLF();
         if(crlf == nullptr)
         {
             return;
         }
-        gotHeader_ = true;
+        headerReceived_ = true;
 
         const string_view header(msg->peek(), std::distance(msg->peek(), crlf));
         LOG_TRACE << "Gemini header is: " << header;
@@ -271,12 +271,12 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             return;
         }
 
-        status_ = std::stoi(std::string(header.begin(), header.begin()+2));
+        responseStatus_ = std::stoi(std::string(header.begin(), header.begin()+2));
         if(header.size() >= 4)
-            meta_ = std::string(header.begin()+3, header.end());
-        if(!downloadMimes_.empty() && status_ / 10 == 2)
+            resoneseMeta_ = std::string(header.begin()+3, header.end());
+        if(!downloadMimes_.empty() && responseStatus_ / 10 == 2)
         {
-            std::string mime = meta_.substr(0, meta_.find_first_of("; ,"));
+            std::string mime = resoneseMeta_.substr(0, resoneseMeta_.find_first_of("; ,"));
             if(std::find(downloadMimes_.begin(), downloadMimes_.end(), mime) == downloadMimes_.end()) {
                 msg->retrieveAll();
                 LOG_TRACE << "Ignoring file of MIME " << mime;
@@ -304,7 +304,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
                 return;
            thisPtr->haveResult(ReqResult::Timeout, nullptr);
         });
-    }       
+    }
 }
 
 
