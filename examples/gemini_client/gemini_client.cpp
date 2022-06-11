@@ -6,9 +6,9 @@ using namespace drogon;
 
 int main()
 {
-    LOG_INFO << "Sending request to gemini://gemini.circumlunar.space/";
+    LOG_INFO << "Sending request to gemini://geminispace.info/";
     trantor::Logger::setLogLevel(trantor::Logger::LogLevel::kTrace);
-    dremini::sendRequest("gemini://kvothe.one/robots.txt"
+    dremini::sendRequest("gemini://geminispace.info/"
         , [](ReqResult result, const HttpResponsePtr& resp) {
             if(result == ReqResult::BadResponse)
                 LOG_ERROR << "BadResponse";
@@ -32,7 +32,7 @@ int main()
             }
 
             app().quit();
-    }, 1, app().getLoop(), 0xffffff, {}, 1);
+    }, 10, app().getLoop(), 0xffffff, {}, 10);
 
     app().run();
 }

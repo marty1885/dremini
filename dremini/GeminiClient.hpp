@@ -58,7 +58,6 @@ protected:
     std::string url_;
     std::string host_;
     short port_;
-    bool needNameResolve_;
     std::shared_ptr<trantor::Resolver> resolver_;
     trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;

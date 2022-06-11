@@ -7,7 +7,7 @@ using namespace drogon;
 static bool isIPString(const std::string& str)
 {
     bool isIpV6 = str.find(":") != std::string::npos;
-    return trantor::InetAddress(str, 0, isIpV6).isUnspecified();
+    return !trantor::InetAddress(str, 0, isIpV6).isUnspecified();
 }
 
 ContentType parseContentType(const string_view &contentType)
@@ -68,7 +68,6 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
 
     if(protocol != "gemini")
         throw std::invalid_argument("Must be a gemini URL");
-    needNameResolve_ = isIPString(host_);
     port_ = 1965;
     if(port.empty() == false)
     {
@@ -88,7 +87,7 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
 
 void GeminiClient::fire()
 {
-    if(!needNameResolve_)
+    if(isIPString(host_))
     {
         bool isIpV6 = host_.find(":") != std::string::npos;
         client_ = std::make_shared<trantor::TcpClient>(loop_, trantor::InetAddress(host_, port_, isIpV6), "GeminiClient");
