@@ -90,22 +90,19 @@ void GeminiClient::fire()
     if(isIPString(host_))
     {
         bool isIpV6 = host_.find(":") != std::string::npos;
-        client_ = std::make_shared<trantor::TcpClient>(loop_, trantor::InetAddress(host_, port_, isIpV6), "GeminiClient");
+        address_ = trantor::InetAddress(host_, port_, isIpV6);
         sendRequestInLoop();
         return;
     }
-    loop_->runInLoop([thisPtr = shared_from_this()](){
-        thisPtr->resolver_ = trantor::Resolver::newResolver(thisPtr->loop_, 10);
-        thisPtr->resolver_->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
-            if(addr.ipNetEndian() == 0)
-            {
-                thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
-                return;
-            }
-            trantor::InetAddress address(addr.toIp(), thisPtr->port_, addr.isIpV6());
-            thisPtr->client_ = std::make_shared<trantor::TcpClient>(thisPtr->loop_, address, "GeminiClient");
-            thisPtr->sendRequestInLoop();
-        });
+    resolver_ = trantor::Resolver::newResolver(loop_, 10);
+    resolver_->resolve(host_, [thisPtr=shared_from_this()](const trantor::InetAddress &addr){
+        if(addr.ipNetEndian() == 0)
+        {
+            thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
+            return;
+        }
+        thisPtr->address_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
+        thisPtr->sendRequestInLoop();
     });
 }
 
@@ -176,6 +173,7 @@ void GeminiClient::sendRequestInLoop()
 {
     // TODO: Validate certificate
     auto weakPtr = weak_from_this();
+    client_ = std::make_shared<trantor::TcpClient>(loop_, address_, "GeminiClient");
     client_->enableSSL(false, false, host_);
     client_->setMessageCallback([weakPtr](const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg) {
