@@ -39,14 +39,18 @@ public:
         callback_ = std::move(callback);
     }
 
-    // If mimes are set. The client will only download content from these MIMEs.
-    // If the server returns MIMEs not in the set. The client returns an empty response with the original header
+    /**
+     * @brief Set a set of allowed MIMEs for the response. If the response is 20 OK but the returned MIME is not in the set,
+     *       the client immediately closes the connection and uses the header as is with empty body. Akin to the HEAD method
+     *       when MIME is not in the set
+     * 
+     * @param mimes the set of allowed MIMEs.
+     */
     void setMimes(const std::vector<std::string>& mimes)
     {
         downloadMimes_ = mimes;
     }
 
-    std::shared_ptr<trantor::TcpClient> client_;
 protected:
     void sendRequestInLoop();
     void onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
@@ -62,6 +66,7 @@ protected:
     double maxTransferDuration_;
 
     // Internal state
+    std::shared_ptr<trantor::TcpClient> client_;
     std::string host_;
     short port_;
     trantor::InetAddress peerAddress_;
