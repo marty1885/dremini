@@ -1,6 +1,12 @@
 #include <dremini/GeminiClient.hpp>
+#include <trantor/net/TcpClient.h>
+#include <trantor/net/Resolver.h>
+#include <trantor/utils/MsgBuffer.h>
+
 #include <regex>
 #include <string>
+#include <sstream>
+#include <algorithm>
 
 using namespace drogon;
 

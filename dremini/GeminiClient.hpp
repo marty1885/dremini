@@ -1,23 +1,27 @@
 #pragma once
 
 #include <drogon/HttpTypes.h>
+#include <drogon/HttpResponse.h>
 #include <drogon/drogon.h>
-#include <iterator>
-#include <memory>
-#include <sstream>
-#include <string>
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/InetAddress.h>
-#include <trantor/net/Resolver.h>
-#include <trantor/net/TcpClient.h>
 #include <trantor/utils/Logger.h>
-#include <trantor/utils/MsgBuffer.h>
+#include <trantor/net/callbacks.h>
+
+#include <memory>
+#include <string>
 #include <stdexcept>
-#include <algorithm>
 
 #ifdef __cpp_impl_coroutine
 #include <drogon/utils/coroutine.h>
 #endif
+
+// Forward declaration of heavy trantor classes
+namespace trantor
+{
+class TcpClient;
+class Resolver;
+}
 
 namespace dremini
 {
