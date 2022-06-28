@@ -234,7 +234,8 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             std::string meta = node.meta;
             // If link to image. We convert it to <img> tag
             if(extended_mode) {
-                if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos) {
+                if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos
+                    || meta.rfind(".webp") != std::string::npos) {
                     const std::string& alt = text;
                     res += "<img src=\"" + meta + "\" alt=\"" + alt + "\">";
                     continue;
