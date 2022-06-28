@@ -1,23 +1,27 @@
 #pragma once
 
 #include <drogon/HttpTypes.h>
+#include <drogon/HttpResponse.h>
 #include <drogon/drogon.h>
-#include <iterator>
-#include <memory>
-#include <sstream>
-#include <string>
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/InetAddress.h>
-#include <trantor/net/Resolver.h>
-#include <trantor/net/TcpClient.h>
 #include <trantor/utils/Logger.h>
-#include <trantor/utils/MsgBuffer.h>
+#include <trantor/net/callbacks.h>
+
+#include <memory>
+#include <string>
 #include <stdexcept>
-#include <algorithm>
 
 #ifdef __cpp_impl_coroutine
 #include <drogon/utils/coroutine.h>
 #endif
+
+// Forward declaration of heavy trantor classes
+namespace trantor
+{
+class TcpClient;
+class Resolver;
+}
 
 namespace dremini
 {
@@ -28,43 +32,54 @@ namespace internal
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = -1, double maxTransferDuration = 0);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
         callback_ = callback;
     }
+    void setCallback(drogon::HttpReqCallback&& callback)
+    {
+        callback_ = std::move(callback);
+    }
 
-    // If mimes are set. The client will only download content from these MIMEs.
-    // If the server returns MIMEs not in the set. The client returns an empty response with the original header
+    /**
+     * @brief Set a set of allowed MIMEs for the response. If the response is 20 OK but the returned MIME is not in the set,
+     *       the client immediately closes the connection and uses the header as is with empty body. Akin to the HEAD method
+     *       when MIME is not in the set
+     * 
+     * @param mimes the set of allowed MIMEs.
+     */
     void setMimes(const std::vector<std::string>& mimes)
     {
         downloadMimes_ = mimes;
     }
 
-    std::shared_ptr<trantor::TcpClient> client_;
 protected:
     void sendRequestInLoop();
     void onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
                     trantor::MsgBuffer *msg);
     void haveResult(drogon::ReqResult result, const trantor::MsgBuffer* msg);
 
-    bool gotHeader_ = false;
+    // User specifable values
     trantor::EventLoop* loop_;
     double timeout_;
     drogon::HttpReqCallback callback_;
-    std::string meta_;
-    int status_ = 0;
     std::string url_;
+    intmax_t maxBodySize_;
+    double maxTransferDuration_;
+
+    // Internal state
+    std::shared_ptr<trantor::TcpClient> client_;
     std::string host_;
     short port_;
-    bool needNameResolve_;
+    trantor::InetAddress peerAddress_;
+    bool headerReceived_ = false;
+    int responseStatus_ = 0;
+    std::string resoneseMeta_;
     std::shared_ptr<trantor::Resolver> resolver_;
-    trantor::InetAddress address_;
     trantor::TimerId timeoutTimerId_;
-    intmax_t maxBodySize_;
     std::vector<std::string> downloadMimes_;
-    double maxTransferDuration_;
     trantor::TimerId transferTimerId_;
     bool callbackCalled_ = false;
 };
