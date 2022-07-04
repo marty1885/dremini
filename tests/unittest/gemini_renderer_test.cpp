@@ -40,4 +40,6 @@ DROGON_TEST(GeminiRendererExtended)
     CHECK(render2Html("*asd_", true).first == "<p>*asd_</p>\n");
     CHECK(render2Html("*asd_*", true).first == "<p><i>asd_</i></p>\n");
     CHECK(render2Html("one_two three_four", true).first == "<p>one_two three_four</p>\n");
+    CHECK(render2Html("**", true).first == "<p>**</p>\n");
+    CHECK(render2Html("__", true).first == "<p>__</p>\n");
 }
