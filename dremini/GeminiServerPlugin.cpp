@@ -209,6 +209,18 @@ static const std::string_view userInputTemplate = R"zz(
 </html>
 )zz";
 
+static std::optional<int> try_stoi(const std::string_view sv)
+{
+    try
+    {
+        return std::stoi(sv.data());
+    }
+    catch (const std::exception &e)
+    {
+        return std::nullopt;
+    }
+}
+
 void GeminiServerPlugin::initAndStart(const Json::Value& config)
 {
     int numThread = config.get("numThread", 1).asInt();
@@ -305,7 +317,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 resp->setBody(html);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
-            else if(resp->getHeader("gemini-status") != "" && std::stoi(resp->getHeader("gemini-status"))/10 == 1)
+            else if(resp->getHeader("gemini-status") != "" && try_stoi(resp->getHeader("gemini-status")).value_or(-1)/10 == 1)
             {
                 bool sensitive_input = req->getHeader("gemini-status") == "11";
                 std::string html = std::string(userInputTemplate);

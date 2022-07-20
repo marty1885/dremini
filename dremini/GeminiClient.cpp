@@ -52,7 +52,17 @@ static ContentType parseContentType(const string_view &contentType)
     return iter->second;
 }
 
-
+static std::optional<int> try_stoi(const std::string_view sv)
+{
+    try
+    {
+        return std::stoi(sv.data());
+    }
+    catch (const std::exception &e)
+    {
+        return std::nullopt;
+    }
+}
 
 namespace dremini
 {
@@ -277,7 +287,14 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             return;
         }
 
-        responseStatus_ = std::stoi(std::string(header.begin(), header.begin()+2));
+        auto statusCode = try_stoi(std::string(header.begin(), header.begin()+2));
+        if(statusCode.has_value() == false)
+        {
+            // bad response again
+            haveResult(ReqResult::BadResponse, nullptr);
+            return;
+        }
+        responseStatus_ = statusCode.value();
         if(header.size() >= 4)
             resoneseMeta_ = std::string(header.begin()+3, header.end());
         if(!downloadMimes_.empty() && responseStatus_ / 10 == 2)
