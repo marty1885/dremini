@@ -73,7 +73,6 @@ static std::string renderPlainText(const std::string_view input)
             bool could_be_strong = state.pos < input.size() && input[state.pos] == ch;
 
             if(could_be_strong) {
-                auto italic_state = state;
                 bool prev_is_allowed = false;
                 // * is allowed anywhere in the text. But _ must proceed with a space, * or line start
                 if(ch == '*') {
@@ -107,28 +106,6 @@ static std::string renderPlainText(const std::string_view input)
                 } else {
                     state.result += std::string(2, ch);
                 }
-                
-                if(italic_state.in_italic && !italic_state.styles.empty() && italic_state.styles.top() == "italic"
-                    && italic_state.style_symbols.top() == ch) {
-                    italic_state.in_italic = false;
-                    italic_state.result += "</i>";
-                    italic_state.styles.pop();
-                    italic_state.style_symbols.pop();
-                    state_stack.push_back(italic_state);
-                } else if(italic_state.in_italic == false && !next_is_space && prev_is_allowed) {
-                    auto backtrack_state = italic_state;
-                    backtrack_state.result += ch;
-                    state_stack.push_back(backtrack_state);
-
-                    italic_state.in_italic = true;
-                    italic_state.result += "<i>";
-                    italic_state.styles.push("italic");
-                    italic_state.style_symbols.push(ch);
-                    state_stack.push_back(italic_state);
-                } else {
-                    italic_state.result += ch;
-                }
-
             }
             else {
                 bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
@@ -234,7 +211,8 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             std::string meta = node.meta;
             // If link to image. We convert it to <img> tag
             if(extended_mode) {
-                if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos) {
+                if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos
+                    || meta.rfind(".webp") != std::string::npos) {
                     const std::string& alt = text;
                     res += "<img src=\"" + meta + "\" alt=\"" + alt + "\">";
                     continue;
