@@ -295,8 +295,12 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             return;
         }
         responseStatus_ = statusCode.value();
-        if(header.size() >= 4)
-            resoneseMeta_ = std::string(header.begin()+3, header.end());
+        if(header.size() >= 4) {
+            // remove leading spaces because some non-compliant servers send them
+            auto meta = header.substr(3);
+            meta = meta.substr(meta.find_first_not_of(" \t"));
+            resoneseMeta_ = meta;
+        }
         if(!downloadMimes_.empty() && responseStatus_ / 10 == 2)
         {
             std::string mime = resoneseMeta_.substr(0, resoneseMeta_.find_first_of("; ,"));
