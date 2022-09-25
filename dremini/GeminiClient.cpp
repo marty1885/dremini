@@ -7,6 +7,7 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
+#include <random>
 
 using namespace drogon;
 
@@ -341,7 +342,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
 }
 
-static std::map<int, std::shared_ptr<internal::GeminiClient>> holder;
+static std::map<uint32_t, std::shared_ptr<internal::GeminiClient>> holder;
 static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
@@ -350,8 +351,10 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
     auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
     int id;
     {
+        thread_local std::mt19937 gen(std::random_device{}());
+        std::uniform_int_distribution<uint32_t> dist(0, std::numeric_limits<uint32_t>::max());
         std::lock_guard lock(holderMutex);
-        for(id = std::abs(rand())+1; holder.find(id) != holder.end(); id = std::abs(rand())+1);
+        for(id = dist(gen); holder.find(id) != holder.end(); id = dist(gen));
         holder[id] = client;
     }
     client->setCallback([callback, id, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
