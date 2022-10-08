@@ -102,6 +102,7 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
         url_ = url;
 }
 
+static thread_local std::shared_ptr<trantor::Resolver> resolver;
 void GeminiClient::fire()
 {
     if(isIPString(host_))
@@ -114,15 +115,19 @@ void GeminiClient::fire()
             loop_->queueInLoop([thisPtr=shared_from_this()] { thisPtr->sendRequestInLoop(); });
         return;
     }
-    resolver_ = trantor::Resolver::newResolver(loop_, 10);
-    resolver_->resolve(host_, [thisPtr=shared_from_this()](const trantor::InetAddress &addr){
-        if(addr.ipNetEndian() == 0)
-        {
-            thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
-            return;
-        }
-        thisPtr->peerAddress_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
-        thisPtr->sendRequestInLoop();
+
+    loop_->runInLoop([thisPtr=shared_from_this()](){
+        if(!resolver)
+            resolver = trantor::Resolver::newResolver(thisPtr->loop_, 10);
+        resolver->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
+            if(addr.ipNetEndian() == 0)
+            {
+                thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
+                return;
+            }
+            thisPtr->peerAddress_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
+            thisPtr->sendRequestInLoop();
+        });
     });
 }
 
