@@ -108,7 +108,10 @@ void GeminiClient::fire()
     {
         bool isIpV6 = host_.find(":") != std::string::npos;
         peerAddress_ = trantor::InetAddress(host_, port_, isIpV6);
-        sendRequestInLoop();
+        if(loop_->isInLoopThread())
+            sendRequestInLoop();
+        else
+            loop_->queueInLoop([thisPtr=shared_from_this()] { thisPtr->sendRequestInLoop(); });
         return;
     }
     resolver_ = trantor::Resolver::newResolver(loop_, 10);
@@ -317,25 +320,6 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             }
         }
         msg->read(std::distance(msg->peek(), crlf)+2);
-    }
-    if(maxBodySize_ > 0 && msg->readableBytes() > size_t(maxBodySize_))
-    {
-        LOG_DEBUG << "Recived more data than " << maxBodySize_ << " bites";
-        // bad response
-        haveResult(ReqResult::BadResponse, nullptr);
-
-        return;
-    }
-
-    if(timeout_ > 0)
-    {
-        auto weakPtr = weak_from_this();
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
-            auto thisPtr = weakPtr.lock();
-            if(!thisPtr)
-                return;
-           thisPtr->haveResult(ReqResult::Timeout, nullptr);
-        });
     }
 }
 
