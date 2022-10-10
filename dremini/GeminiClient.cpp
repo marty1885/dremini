@@ -8,6 +8,7 @@
 #include <sstream>
 #include <algorithm>
 #include <random>
+#include <list>
 
 using namespace drogon;
 
@@ -331,28 +332,24 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
 }
 
-static std::map<uint32_t, std::shared_ptr<internal::GeminiClient>> holder;
+static std::list<std::shared_ptr<internal::GeminiClient>> holder;
 static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
     , double maxTransferDuration)
 {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
-    int id;
+    decltype(holder)::iterator it;
     {
-        thread_local std::mt19937 gen(std::random_device{}());
-        std::uniform_int_distribution<uint32_t> dist(0, std::numeric_limits<uint32_t>::max());
-        std::lock_guard lock(holderMutex);
-        for(id = dist(gen); holder.find(id) != holder.end(); id = dist(gen));
-        holder[id] = client;
+        std::lock_guard<std::mutex> lock(holderMutex);
+        holder.push_back(client);
+        it = std::prev(holder.end());
     }
-    client->setCallback([callback, id, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
+    client->setCallback([callback, it, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
 
         std::lock_guard lock(holderMutex);
-        auto it = holder.find(id);
-        assert(it != holder.end());
-        loop->queueInLoop([client = it->second]() {
+        loop->queueInLoop([client = *it]() {
             // client is destroyed here
         });
         holder.erase(it);
