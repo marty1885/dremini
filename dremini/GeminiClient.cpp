@@ -349,7 +349,7 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
         callback(result, resp);
 
         std::lock_guard lock(holderMutex);
-        loop->queueInLoop([client = *it]() {
+        loop->queueInLoop([client = std::move(*it)]() {
             // client is destroyed here
         });
         holder.erase(it);
