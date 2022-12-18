@@ -214,7 +214,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos
                     || meta.rfind(".webp") != std::string::npos) {
                     const std::string& alt = text;
-                    res += "<img src=\"" + meta + "\" alt=\"" + alt + "\">";
+                    res += "<img src=\"" + meta + "\" alt=\"" + alt + "\" title=\"" + alt + "\">";
                     continue;
                 }
             }
