@@ -16,7 +16,7 @@ GeminiServer::GeminiServer(EventLoop* loop, const InetAddress& listenAddr, const
     }
     LOG_DEBUG << "Creating srver on address " << listenAddr.toIpPort();
 
-    server_.enableSSL(key, cert, false);
+    server_.enableSSL(cert, key, false);
     server_.setConnectionCallback([this](const TcpConnectionPtr& conn) {onConnection(conn);});
     server_.setRecvMessageCallback([this](const TcpConnectionPtr& conn, MsgBuffer* buf){onMessage(conn, buf);});
 }
