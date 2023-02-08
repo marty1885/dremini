@@ -7,6 +7,8 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
+#include <random>
+#include <list>
 
 using namespace drogon;
 
@@ -52,7 +54,17 @@ static ContentType parseContentType(const string_view &contentType)
     return iter->second;
 }
 
-
+static std::optional<int> try_stoi(const std::string_view sv)
+{
+    try
+    {
+        return std::stoi(sv.data());
+    }
+    catch (const std::exception &e)
+    {
+        return std::nullopt;
+    }
+}
 
 namespace dremini
 {
@@ -91,24 +103,32 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
         url_ = url;
 }
 
+static thread_local std::shared_ptr<trantor::Resolver> resolver;
 void GeminiClient::fire()
 {
     if(isIPString(host_))
     {
         bool isIpV6 = host_.find(":") != std::string::npos;
         peerAddress_ = trantor::InetAddress(host_, port_, isIpV6);
-        sendRequestInLoop();
+        if(loop_->isInLoopThread())
+            sendRequestInLoop();
+        else
+            loop_->queueInLoop([thisPtr=shared_from_this()] { thisPtr->sendRequestInLoop(); });
         return;
     }
-    resolver_ = trantor::Resolver::newResolver(loop_, 10);
-    resolver_->resolve(host_, [thisPtr=shared_from_this()](const trantor::InetAddress &addr){
-        if(addr.ipNetEndian() == 0)
-        {
-            thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
-            return;
-        }
-        thisPtr->peerAddress_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
-        thisPtr->sendRequestInLoop();
+
+    loop_->runInLoop([thisPtr=shared_from_this()](){
+        if(!resolver)
+            resolver = trantor::Resolver::newResolver(thisPtr->loop_, 10);
+        resolver->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
+            if(addr.ipNetEndian() == 0)
+            {
+                thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
+                return;
+            }
+            thisPtr->peerAddress_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
+            thisPtr->sendRequestInLoop();
+        });
     });
 }
 
@@ -277,9 +297,24 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             return;
         }
 
-        responseStatus_ = std::stoi(std::string(header.begin(), header.begin()+2));
-        if(header.size() >= 4)
-            resoneseMeta_ = std::string(header.begin()+3, header.end());
+        auto statusCode = try_stoi(std::string(header.begin(), header.begin()+2));
+        if(statusCode.has_value() == false)
+        {
+            // bad response again
+            haveResult(ReqResult::BadResponse, nullptr);
+            return;
+        }
+        responseStatus_ = statusCode.value();
+        if(header.size() >= 4) {
+            // remove leading spaces because some non-compliant servers send them
+            auto meta = header.substr(3);
+            auto idx = meta.find_first_not_of(" \t");
+            if(idx != std::string::npos)
+                resoneseMeta_ = std::string(meta.begin()+idx, meta.end());
+            else
+                resoneseMeta_ = "";
+            resoneseMeta_ = meta;
+        }
         if(!downloadMimes_.empty() && responseStatus_ / 10 == 2)
         {
             std::string mime = resoneseMeta_.substr(0, resoneseMeta_.find_first_of("; ,"));
@@ -292,50 +327,29 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         }
         msg->read(std::distance(msg->peek(), crlf)+2);
     }
-    if(maxBodySize_ > 0 && msg->readableBytes() > size_t(maxBodySize_))
-    {
-        LOG_DEBUG << "Recived more data than " << maxBodySize_ << " bites";
-        // bad response
-        haveResult(ReqResult::BadResponse, nullptr);
-
-        return;
-    }
-
-    if(timeout_ > 0)
-    {
-        auto weakPtr = weak_from_this();
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
-            auto thisPtr = weakPtr.lock();
-            if(!thisPtr)
-                return;
-           thisPtr->haveResult(ReqResult::Timeout, nullptr);
-        });
-    }
 }
 
 
 }
 
-static std::map<int, std::shared_ptr<internal::GeminiClient>> holder;
+static std::list<std::shared_ptr<internal::GeminiClient>> holder;
 static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
     , double maxTransferDuration)
 {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
-    int id;
+    decltype(holder)::iterator it;
     {
-        std::lock_guard lock(holderMutex);
-        for(id = std::abs(rand())+1; holder.find(id) != holder.end(); id = std::abs(rand())+1);
-        holder[id] = client;
+        std::lock_guard<std::mutex> lock(holderMutex);
+        holder.push_back(client);
+        it = std::prev(holder.end());
     }
-    client->setCallback([callback, id, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
+    client->setCallback([callback, it, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
         callback(result, resp);
 
         std::lock_guard lock(holderMutex);
-        auto it = holder.find(id);
-        assert(it != holder.end());
-        loop->queueInLoop([client = it->second]() {
+        loop->queueInLoop([client = std::move(*it)]() {
             // client is destroyed here
         });
         holder.erase(it);

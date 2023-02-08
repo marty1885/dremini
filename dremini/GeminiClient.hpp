@@ -5,7 +5,6 @@
 #include <drogon/drogon.h>
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/InetAddress.h>
-#include <trantor/utils/Logger.h>
 #include <trantor/net/callbacks.h>
 
 #include <memory>
@@ -77,7 +76,6 @@ protected:
     bool headerReceived_ = false;
     int responseStatus_ = 0;
     std::string resoneseMeta_;
-    std::shared_ptr<trantor::Resolver> resolver_;
     trantor::TimerId timeoutTimerId_;
     std::vector<std::string> downloadMimes_;
     trantor::TimerId transferTimerId_;

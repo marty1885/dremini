@@ -22,6 +22,26 @@ static bool startsWith(const std::string_view sv, const std::string_view target)
 
 namespace dremini
 {
+static std::string_view ltrim(std::string_view s)
+{
+    s.remove_prefix(std::distance(s.cbegin(), std::find_if(s.cbegin(), s.cend(),
+         [](int c) {return !std::isspace(c);})));
+
+    return s;
+}
+
+static std::string_view rtrim(std::string_view s)
+{
+    s.remove_suffix(std::distance(s.crbegin(), std::find_if(s.crbegin(), s.crend(),
+        [](int c) {return !std::isspace(c);})));
+
+    return s;
+}
+
+static std::string trim(std::string s)
+{
+    return std::string(ltrim(rtrim(s)));
+}
 
 std::vector<GeminiASTNode> parseGemini(const std::string_view str)
 {
@@ -69,21 +89,21 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     const static std::regex re("### *(.*)");
                     std::smatch sm;
                     std::regex_match(node.orig_text, sm, re);
-                    node.text = sm[1];
+                    node.text = trim(sm[1]);
                     node.type = "heading3";
                 }
                 else if(startsWith(line, "##")) {
                     const static std::regex re("## *(.*)");
                     std::smatch sm;
                     std::regex_match(node.orig_text, sm, re);
-                    node.text = sm[1];
+                    node.text = trim(sm[1]);
                     node.type = "heading2";
                 }
                 else if(startsWith(line, "#")) {
                     const static std::regex re("# *(.*)");
                     std::smatch sm;
                     std::regex_match(node.orig_text, sm, re);
-                    node.text = sm[1];
+                    node.text = trim(sm[1]);
                     node.type = "heading1";
                 }
                 else if(startsWith(line, "* ")) {
