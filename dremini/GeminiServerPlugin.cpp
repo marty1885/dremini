@@ -258,7 +258,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 LOG_FATAL << ip << " is not a valid IP address";
             }
 
-            auto server = std::make_unique<GeminiServer>(app().getLoop(), addr, cert, key);
+            auto server = std::make_unique<GeminiServer>(app().getLoop(), addr, key, cert);
             server->setIoLoopThreadPool(pool_);
             server->start();
             servers_.emplace_back(std::move(server));
