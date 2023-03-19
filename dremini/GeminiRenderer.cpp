@@ -209,12 +209,18 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             if(text.empty())
                 text = node.meta;
             std::string meta = node.meta;
-            // If link to image. We convert it to <img> tag
             if(extended_mode) {
+                // If link to image. We convert it to <img> tag
                 if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos
                     || meta.rfind(".webp") != std::string::npos) {
                     const std::string& alt = text;
                     res += "<img src=\"" + meta + "\" alt=\"" + alt + "\" title=\"" + alt + "\">";
+                    continue;
+                }
+                // link to audio (mp3, ogg, wav) => <audio> tag
+                if(meta.rfind(".mp3") != std::string::npos || meta.rfind(".ogg") != std::string::npos
+                    || meta.rfind(".wav") != std::string::npos) {
+                    res += "<audio controls preload=\"none\"><source src=\"" + meta + "\">Your browser does not support the audio element.</audio>";
                     continue;
                 }
             }
