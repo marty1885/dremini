@@ -279,6 +279,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
     if(timeout_ > 0)
         loop_->invalidateTimer(timeoutTimerId_);
     LOG_TRACE << "Got data from Gemini server";
+
     if(!headerReceived_)
     {
         const char* crlf = msg->findCRLF();
@@ -326,6 +327,13 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             }
         }
         msg->read(std::distance(msg->peek(), crlf)+2);
+    }
+
+    if(maxBodySize_ < 0 || msg->readableBytes() > maxBodySize_)
+    {
+        haveResult(ReqResult::Ok, msg);
+        connPtr->shutdown();
+        return;
     }
 }
 
