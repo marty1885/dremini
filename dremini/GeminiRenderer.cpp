@@ -197,7 +197,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 res += "<p>"+renderPlainText(text)+"</p>\n";
             }
             else
-                res += "<p>"+HttpViewData::htmlTranslate(text)+"</p>\n";
+                res += "<p>"+text+"</p>\n";
         }
         else if(node.type == "heading1")
             res += "<h1>"+text+"</h1>\n";
@@ -208,7 +208,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
         else if(node.type == "link")
         {
             if(text.empty())
-                text = node.meta;
+                text = HttpViewData::htmlTranslate(node.meta);
             std::string meta = node.meta;
             if(extended_mode) {
                 // If link to image. We convert it to <img> tag
