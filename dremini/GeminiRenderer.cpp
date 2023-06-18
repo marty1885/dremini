@@ -193,10 +193,11 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     res += "<hr>\n";
                     continue;
                 }
+                // TODO: Do we need to translate text in extended mode?
                 res += "<p>"+renderPlainText(text)+"</p>\n";
             }
             else
-                res += "<p>"+text+"</p>\n";
+                res += "<p>"+HttpViewData::htmlTranslate(text)+"</p>\n";
         }
         else if(node.type == "heading1")
             res += "<h1>"+text+"</h1>\n";
@@ -211,10 +212,10 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             std::string meta = node.meta;
             if(extended_mode) {
                 // If link to image. We convert it to <img> tag
-                if(meta.rfind(".png") != std::string::npos || meta.rfind(".jpg") != std::string::npos
-                    || meta.rfind(".webp") != std::string::npos) {
+                const std::array<std::string_view, 6> img_exts = {".png", ".jpg", ".webp", ".gif", ".jpeg", ".bmp"};
+                if(std::any_of(img_exts.begin(), img_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
                     const std::string& alt = text;
-                    res += "<img src=\"" + meta + "\" alt=\"" + alt + "\" title=\"" + alt + "\">";
+                    res += "<figure><img loading=\"lazy\" src=\"" + meta + "\" alt=\"" + alt + "\" title=\"Image: " + alt + "\"><figcaption>Image: "+alt+"</figcaption></figure>";
                     continue;
                 }
                 // link to audio (mp3, ogg, wav) => <audio> tag
