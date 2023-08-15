@@ -215,13 +215,20 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 const std::array<std::string_view, 6> img_exts = {".png", ".jpg", ".webp", ".gif", ".jpeg", ".bmp"};
                 if(std::any_of(img_exts.begin(), img_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
                     const std::string& alt = text;
-                    res += "<figure><img loading=\"lazy\" src=\"" + meta + "\" alt=\"" + alt + "\" title=\"Image: " + alt + "\"><figcaption>Image: "+alt+"</figcaption></figure>";
+                    res += "<figure><a href=\"" + meta + "\"><img loading=\"lazy\" src=\"" + meta + "\" alt=\"" + alt + "\" title=\"Image: " + alt + "\"></a><figcaption>Image: "+alt+"</figcaption></figure>";
                     continue;
                 }
                 // link to audio (mp3, ogg, wav) => <audio> tag
                 if(meta.rfind(".mp3") != std::string::npos || meta.rfind(".ogg") != std::string::npos
                     || meta.rfind(".wav") != std::string::npos) {
                     res += "<audio controls preload=\"none\"><source src=\"" + meta + "\">Your browser does not support the audio element.</audio>";
+                    continue;
+                }
+
+                // Youtube video enbed
+                if(meta.find("https://youtube.com/watch?v=") == 0) {
+                    std::string id = meta.substr(30);
+                    res += "<iframe width=\"560\" height=\"315\" src=\"https://www.youtube.com/embed/"+id+"\" frameborder=\"0\" allow=\"accelerometer; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
                     continue;
                 }
             }
