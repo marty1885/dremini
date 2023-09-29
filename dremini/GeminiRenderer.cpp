@@ -219,16 +219,42 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     continue;
                 }
                 // link to audio (mp3, ogg, wav) => <audio> tag
-                if(meta.rfind(".mp3") != std::string::npos || meta.rfind(".ogg") != std::string::npos
-                    || meta.rfind(".wav") != std::string::npos) {
-                    res += "<audio controls preload=\"none\"><source src=\"" + meta + "\">Your browser does not support the audio element.</audio>";
+                const std::array<std::string_view, 4> audio_exts = {".mp3", ".ogg", ".wav", ".opus"};
+                if(std::any_of(audio_exts.begin(), audio_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
+                    res += "<audio preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the audio element.</audio>";
                     continue;
                 }
 
-                // Youtube video enbed
-                if(meta.find("https://youtube.com/watch?v=") == 0) {
-                    std::string id = meta.substr(30);
-                    res += "<iframe width=\"560\" height=\"315\" src=\"https://www.youtube.com/embed/"+id+"\" frameborder=\"0\" allow=\"accelerometer; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
+                // embed pdf
+                if(meta.rfind(".pdf") != std::string::npos) {
+                    res += "<embed src=\"" + meta + "\" type=\"application/pdf\" width=\"100%\" height=\"100%\">";
+                    continue;
+                }
+
+                // Youtube video embed
+                std::array<std::string_view, 3> youtube_url_prefixes = {"https://youtube.com/watch?v=", "https://youtu.be/", "https://www.youtube.com/watch?v="};
+                std::string youtube_id;
+                std::string timecode;
+                auto it = std::find_if(youtube_url_prefixes.begin(), youtube_url_prefixes.end(), [&meta](const std::string_view prefix) { return meta.find(prefix) == 0; });
+                if(it != youtube_url_prefixes.end()) {
+                    size_t param_pos = meta.find_first_of("?&");
+                    size_t id_len = param_pos != std::string::npos ? param_pos-it->size() : std::string::npos;
+                    youtube_id = meta.substr(it->size(), id_len);
+                    if(param_pos != std::string::npos) {
+                        size_t t_pos = meta.find("t=", param_pos);
+                        if(t_pos != std::string::npos) {
+                            size_t t_end = meta.find('&', t_pos);
+                            size_t t_len = t_end != std::string::npos ? t_end-t_pos-2 : std::string::npos;
+                            timecode = meta.substr(t_pos+2, t_len);
+                        }
+                    }
+                }
+                if(!youtube_id.empty()) {
+                    auto embed_url = "https://www.youtube.com/embed/"+youtube_id;
+                    if(!timecode.empty())
+                        embed_url += "?start="+timecode;
+                    auto iframe = "<iframe width=\"560\" height=\"315\" src=\""+embed_url+"\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
+                    res += "<figure>" + iframe + "<figcaption>Youtube video: <a href=\""+meta+"\">"+text+"</a></figcaption></figure>";
                     continue;
                 }
             }
@@ -276,7 +302,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
         }
     }
     if(last_is_backquote)
-        res += "</backquote>\n";
+        res += "</blockquote>\n";
     else if(last_is_list)
         res += "</ul>\n";
     return {res, HttpViewData::htmlTranslate(title)};

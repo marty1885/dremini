@@ -18,9 +18,9 @@ static bool isIPString(const std::string& str)
     return !trantor::InetAddress(str, 0, isIpV6).isUnspecified();
 }
 
-static ContentType parseContentType(const string_view &contentType)
+static ContentType parseContentType(const std::string_view &contentType)
 {
-    static const std::unordered_map<string_view, ContentType> map_{
+    static const std::unordered_map<std::string_view, ContentType> map_{
         {"text/html", CT_TEXT_HTML},
         {"application/x-www-form-urlencoded", CT_APPLICATION_X_FORM},
         {"application/xml", CT_APPLICATION_XML},
@@ -289,7 +289,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         }
         headerReceived_ = true;
 
-        const string_view header(msg->peek(), std::distance(msg->peek(), crlf));
+        const std::string_view header(msg->peek(), std::distance(msg->peek(), crlf));
         LOG_TRACE << "Gemini header is: " << header;
         if(header.size() < 2 || (header.size() >= 3 && header[2] != ' '))
         {
