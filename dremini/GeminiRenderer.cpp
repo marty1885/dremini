@@ -161,6 +161,33 @@ static bool isSingleCharRepeat(const std::string_view str)
     return true;
 }
 
+static std::string urlFriendly(const std::string_view str)
+{
+    std::string res;
+    bool last_is_dash = false;
+    const std::string_view replace_with_dash = " -_";
+    const std::string_view ignore_chars = ".,:;!?\"'()[]{}<>*/\\@#$%^&+=~`|";
+    auto in = [](auto ch, auto set) { return set.find(ch) != std::string_view::npos; };
+    for(auto ch : str) {
+        if(in(ch, ignore_chars))
+            continue;
+
+        ch = std::tolower(ch);
+
+        if(! in(ch, replace_with_dash)) {
+            last_is_dash = false;
+            res += ch;
+            continue;
+        }
+
+        if(!last_is_dash) {
+            res += '-';
+            last_is_dash = true;
+        }
+    }
+    return utils::urlEncode(res);
+}
+
 std::pair<std::string, std::string> dremini::render2Html(const std::string_view gmi_source, bool extended_mode)
 {
     auto nodes = parseGemini(gmi_source);
@@ -173,6 +200,8 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
     std::string title;
     bool last_is_list = false;
     bool last_is_backquote = false;
+    std::set<std::string> paragrah_names;
+
     for(const auto& node : nodes) {
         std::string text = HttpViewData::htmlTranslate(node.text);
 
@@ -199,12 +228,29 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             else
                 res += "<p>"+text+"</p>\n";
         }
-        else if(node.type == "heading1")
-            res += "<h1>"+text+"</h1>\n";
-        else if(node.type == "heading2")
-            res += "<h2>"+text+"</h2>\n";
-        else if(node.type == "heading3")
-            res += "<h3>"+text+"</h3>\n";
+        else if(node.type == "heading1" || node.type == "heading2" || node.type == "heading3")
+        {
+            std::string tag = "h1";
+            if(node.type == "heading2")
+                tag = "h2";
+            else if(node.type == "heading3")
+                tag = "h3";
+
+            if(!extended_mode && tag != "h1")
+                res += "<"+tag+">"+text+"</"+tag+">\n";
+            else {
+                std::string id = urlFriendly(text);
+                if(paragrah_names.find(id) != paragrah_names.end()) {
+                    int i = 1;
+                    while(paragrah_names.find(id+"-"+std::to_string(i)) != paragrah_names.end())
+                        i++;
+                    id += "-"+std::to_string(i);
+                }
+                paragrah_names.insert(id);
+                res += "<"+tag+"><a href=\"#"+id+"\" id=\""+id+"\">"+text+"</a></"+tag+">\n";
+            }
+            continue;
+        }
         else if(node.type == "link")
         {
             if(text.empty())
@@ -222,12 +268,6 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 const std::array<std::string_view, 4> audio_exts = {".mp3", ".ogg", ".wav", ".opus"};
                 if(std::any_of(audio_exts.begin(), audio_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
                     res += "<audio preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the audio element.</audio>";
-                    continue;
-                }
-
-                // embed pdf
-                if(meta.rfind(".pdf") != std::string::npos) {
-                    res += "<embed src=\"" + meta + "\" type=\"application/pdf\" width=\"100%\" height=\"100%\">";
                     continue;
                 }
 
