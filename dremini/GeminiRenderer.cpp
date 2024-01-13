@@ -236,7 +236,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             else if(node.type == "heading3")
                 tag = "h3";
 
-            if(!extended_mode && tag != "h1")
+            if(!extended_mode || tag == "h1")
                 res += "<"+tag+">"+text+"</"+tag+">\n";
             else {
                 std::string id = urlFriendly(text);
@@ -267,7 +267,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 // link to audio (mp3, ogg, wav) => <audio> tag
                 const std::array<std::string_view, 4> audio_exts = {".mp3", ".ogg", ".wav", ".opus"};
                 if(std::any_of(audio_exts.begin(), audio_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
-                    res += "<audio preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the audio element.</audio>";
+                    res += "<figure><audio preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the audio element.</audio><figcaption>Audio: "+text+"</figcaption></figure>";
                     continue;
                 }
 
@@ -294,7 +294,8 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     if(!timecode.empty())
                         embed_url += "?start="+timecode;
                     auto iframe = "<iframe width=\"560\" height=\"315\" src=\""+embed_url+"\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
-                    res += "<figure>" + iframe + "<figcaption>Youtube video: <a href=\""+meta+"\">"+text+"</a></figcaption></figure>";
+                    res += "<figure><div class=\"ytwrapper_outer\"><div class=\"ytwrapper\">"
+                        + iframe + "</div></div><figcaption>Youtube video: <a href=\""+meta+"\">"+text+"</a></figcaption></figure>";
                     continue;
                 }
             }
