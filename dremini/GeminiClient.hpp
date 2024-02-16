@@ -71,7 +71,7 @@ protected:
     // Internal state
     std::shared_ptr<trantor::TcpClient> client_;
     std::string host_;
-    short port_;
+    uint16_t port_;
     trantor::InetAddress peerAddress_;
     bool headerReceived_ = false;
     int responseStatus_ = 0;
