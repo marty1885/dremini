@@ -58,7 +58,10 @@ static std::optional<int> try_stoi(const std::string_view sv)
 {
     try
     {
-        return std::stoi(sv.data());
+        size_t pos = 0;
+        return std::stoi(sv.data(), &pos);
+        if(pos != sv.size())
+            return std::nullopt;
     }
     catch (const std::exception &e)
     {
@@ -291,7 +294,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
         const std::string_view header(msg->peek(), std::distance(msg->peek(), crlf));
         LOG_TRACE << "Gemini header is: " << header;
-        if(header.size() < 2 || (header.size() >= 3 && header[2] != ' ') || header.size() > 1024)
+        if(header.size() < 2 || (header.size() >= 3 && header[2] != ' ') || header.size() > 1024 || header.find('\n') != std::string::npos)
         {
             // bad response
             haveResult(ReqResult::BadResponse, nullptr);
