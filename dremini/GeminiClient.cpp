@@ -290,6 +290,10 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         const char* crlf = msg->findCRLF();
         if(crlf == nullptr)
         {
+            if(msg->readableBytes() > 1024) {
+                haveResult(ReqResult::BadResponse, nullptr);
+                return;
+            }
             return;
         }
         headerReceived_ = true;
