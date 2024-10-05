@@ -240,6 +240,8 @@ void GeminiClient::sendRequestInLoop()
             thisPtr->haveResult(ReqResult::HandshakeError, nullptr);
         else if (err == trantor::SSLError::kSSLInvalidCertificate)
             thisPtr->haveResult(ReqResult::InvalidCertificate, nullptr);
+        else if (err == trantor::SSLError::kSSLProtocolError)
+            thisPtr->haveResult(ReqResult::EncryptionFailure, nullptr);
         else
         {
             LOG_FATAL << "Invalid value for SSLError";
