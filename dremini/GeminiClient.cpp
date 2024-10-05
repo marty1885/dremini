@@ -291,7 +291,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
 
         const std::string_view header(msg->peek(), std::distance(msg->peek(), crlf));
         LOG_TRACE << "Gemini header is: " << header;
-        if(header.size() < 2 || (header.size() >= 3 && header[2] != ' '))
+        if(header.size() < 2 || (header.size() >= 3 && header[2] != ' ') || header.size() > 1024)
         {
             // bad response
             haveResult(ReqResult::BadResponse, nullptr);
