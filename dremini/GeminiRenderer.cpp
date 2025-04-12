@@ -1,5 +1,6 @@
 #include "GeminiRenderer.hpp"
 #include "GeminiParser.hpp"
+#include <algorithm>
 #include <drogon/utils/Utilities.h>
 #include <drogon/HttpViewData.h>
 
@@ -313,6 +314,57 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             res += "<div class=\"link\"><a href=\""+meta+"\" target=\""+target+"\">"+text+"</a></div>\n";
         }
         else if(node.type == "preformatted_text") {
+            if(extended_mode) {
+                // detect tables and render as table
+                if(node.meta == "markdown" || node.meta == "md" || node.meta.empty()) {
+                    // Detect if the block contains a Markdown table
+                    std::istringstream stream(text);
+                    std::string line;
+                    std::vector<std::vector<std::string>> table;
+                    bool is_table = true;
+                    while (std::getline(stream, line)) {
+                        std::istringstream line_stream(line);
+                        std::string cell;
+                        std::vector<std::string> row;
+                        while (std::getline(line_stream, cell, '|')) {
+                            if (!cell.empty() && cell.find_first_not_of(" \t") != std::string::npos) {
+                                row.push_back(cell);
+                            }
+                        }
+                        if (!row.empty()) {
+                            table.push_back(row);
+                        } else {
+                            is_table = false;
+                            break;
+                        }
+                    }
+                    if(table.size() <= 3) {
+                        is_table = false;
+                    }
+                    if(table.size() > 1) {
+                        const auto& delim_row = table[1];
+                        for (const auto& cell : delim_row) {
+                            if (cell.find_first_not_of(" \t-:=") != std::string::npos) {
+                                is_table = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (is_table) {
+                        table.erase(table.begin() + 1);
+                        res += "<table>\n";
+                        for (const auto& row : table) {
+                            res += "<tr>";
+                            for (const auto& cell : row) {
+                                res += "<td>" + HttpViewData::htmlTranslate(cell) + "</td>";
+                            }
+                            res += "</tr>\n";
+                        }
+                        res += "</table>\n";
+                        continue;
+                    }
+                }
+            }
             bool meta_could_be_language = node.meta.find_first_of(" *'\"/\\()[]{};><`") == std::string::npos
                 && node.meta == utils::urlEncode(node.meta) && !node.meta.empty();
             if(extended_mode && meta_could_be_language) {
