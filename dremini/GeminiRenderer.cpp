@@ -296,7 +296,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                         embed_url += "?start="+timecode;
                     auto iframe = "<iframe width=\"560\" height=\"315\" src=\""+embed_url+"\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
                     res += "<figure><div class=\"ytwrapper_outer\"><div class=\"ytwrapper\">"
-                        + iframe + "</div></div><figcaption>Youtube video: <a href=\""+meta+"\">"+text+"</a></figcaption></figure>";
+                        + iframe + "</div></div><figcaption>Youtube video: <a href=\""+meta+"\" target=\"_blank\">"+text+"</a></figcaption></figure>";
                     continue;
                 }
             }

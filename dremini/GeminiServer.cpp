@@ -47,7 +47,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         resp->addHeader("meta", "Invalid");
         sendResponseBack(conn, resp);
         return;
-    } 
+    }
     const char* crlf = buf->findCRLF();
     if(crlf == nullptr)
         return;
@@ -79,11 +79,11 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         req->setParameter("query", query);
     LOG_TRACE << "Gemini request recived: " << url;
 
-    int idx = roundRobbinIdx_++;
+    int idx = roundRobbinIdx_.fetch_add(1, std::memory_order_relaxed);
     if(idx > 0x7ffff) // random large number
     {
         // XXX: Properbally data race. But it happens rare enough
-        roundRobbinIdx_ = 0;
+        roundRobbinIdx_.store(0, std::memory_order_relaxed);
     }
     conn->setContext(std::make_shared<bool>(true));
     idx = idx % app().getThreadNum();
@@ -119,7 +119,7 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
     else if(httpStatus%100 == 2) // Success -> Success
         status = 20;
     else if(httpStatus%100 == 4) // Client Error -> Permanent Failure
-        status = 50; 
+        status = 50;
     else if(httpStatus%100 == 5) // Server Error -> Temporary Failure
         status = 40;
     else
