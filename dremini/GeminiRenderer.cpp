@@ -189,6 +189,12 @@ static std::string urlFriendly(const std::string_view str)
     return utils::urlEncode(res);
 }
 
+static std::string_view trim(std::string_view str, std::string_view ignore_chars) {
+    auto start = str.find_first_not_of(ignore_chars);
+    auto end = str.find_last_not_of(ignore_chars);
+    return start == std::string_view::npos ? "" : str.substr(start, end - start + 1);
+}
+
 std::pair<std::string, std::string> dremini::render2Html(const std::string_view gmi_source, bool extended_mode)
 {
     auto nodes = parseGemini(gmi_source);
@@ -271,6 +277,12 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     res += "<figure><audio preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the audio element.</audio><figcaption>Audio: "+text+"</figcaption></figure>";
                     continue;
                 }
+                // link to video (webm, mkv, mp4) => <video> tag
+                const std::array<std::string_view, 3> video_exts = {".webm", ".mkv", ".mp4"};
+                if(std::any_of(video_exts.begin(), video_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
+                    res += "<figure><video style=\"max-width: 100%;\" preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the video element.</video><figcaption>Video: "+text+"</figcaption></figure>";
+                    continue;
+                }
 
                 // Youtube video embed
                 std::array<std::string_view, 3> youtube_url_prefixes = {"https://youtube.com/watch?v=", "https://youtu.be/", "https://www.youtube.com/watch?v="};
@@ -327,9 +339,8 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                         std::string cell;
                         std::vector<std::string> row;
                         while (std::getline(line_stream, cell, '|')) {
-                            if (!cell.empty() && cell.find_first_not_of(" \t") != std::string::npos) {
-                                row.push_back(cell);
-                            }
+                            cell = trim(cell, " \t");
+                            row.push_back(renderPlainText(cell));
                         }
                         if (!row.empty()) {
                             table.push_back(row);
@@ -356,7 +367,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                         for (const auto& row : table) {
                             res += "<tr>";
                             for (const auto& cell : row) {
-                                res += "<td>" + HttpViewData::htmlTranslate(cell) + "</td>";
+                                res += "<td>" + cell + "</td>";
                             }
                             res += "</tr>\n";
                         }
