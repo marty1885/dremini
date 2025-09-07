@@ -156,6 +156,7 @@ static std::string renderPlainText(const std::string_view input)
                     state.result += "</strike>";
                     state.styles.pop();
                     state.style_symbols.pop();
+                    state_stack.pop_back();
                 } else if(state.in_strike == false && !next_is_space) {
                     auto backtrack_state = state;
                     backtrack_state.result += std::string(2, ch);
