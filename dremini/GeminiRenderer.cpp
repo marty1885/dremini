@@ -18,6 +18,7 @@ struct ParserState
     bool in_code = false;
     bool in_italic = false;
     bool in_strong = false;
+    bool in_strike = false;
     std::stack<std::string> styles;
     std::stack<char> style_symbols;
 };
@@ -25,7 +26,7 @@ struct ParserState
 static std::string renderPlainText(const std::string_view input)
 {
     // No special character -> No need to parse
-    if(input.find_first_of("*_`") == std::string_view::npos)
+    if(input.find_first_of("*_`~") == std::string_view::npos)
         return std::string(input);
 
     std::deque<ParserState> state_stack;
@@ -46,7 +47,7 @@ static std::string renderPlainText(const std::string_view input)
 
         // Process all normal text in a single go. Faster then character by character
         auto remain = input.substr(state.pos);
-        auto n = remain.find_first_of("`*_");
+        auto n = remain.find_first_of("`*_~");
         if(n == std::string_view::npos) {
             state.result += remain;
             state.pos = input.size();
@@ -140,6 +141,36 @@ static std::string renderPlainText(const std::string_view input)
                 } else {
                     state.result += ch;
                 }
+            }
+        }
+        else if(ch == '~' && !state.in_code) {
+            bool could_be_strike = state.pos < input.size() && input[state.pos] == ch;
+            if(could_be_strike) {
+                state.pos += 1;
+                bool prev_is_space = state.pos > 2 && input[state.pos - 2] == ' ';
+                bool next_is_space = state.pos < input.size() && input[state.pos] == ' ';
+
+                if(state.in_strike && !state.styles.empty() && state.styles.top() == "strike" && !prev_is_space
+                    && state.style_symbols.top() == ch) {
+                    state.in_strike = false;
+                    state.result += "</strike>";
+                    state.styles.pop();
+                    state.style_symbols.pop();
+                } else if(state.in_strike == false && !next_is_space) {
+                    auto backtrack_state = state;
+                    backtrack_state.result += std::string(2, ch);
+                    state_stack.push_back(backtrack_state);
+
+                    state.in_strike = true;
+                    state.result += "<strike>";
+                    state.styles.push("strike");
+                    state.style_symbols.push(ch);
+                } else {
+                    state.result += std::string(2, ch);
+                }
+            }
+            else {
+                state.result += ch;
             }
         }
         else {
