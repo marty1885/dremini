@@ -1,11 +1,12 @@
 #include "GeminiRenderer.hpp"
 #include "GeminiParser.hpp"
 #include <algorithm>
+#include <deque>
 #include <drogon/utils/Utilities.h>
 #include <drogon/HttpViewData.h>
 
-#include <stack>
 #include <deque>
+#include <stack>
 #include <string_view>
 
 using namespace drogon;
@@ -30,7 +31,7 @@ static std::string renderPlainText(const std::string_view input)
         return std::string(input);
 
     std::deque<ParserState> state_stack;
-    state_stack.push_front({});
+    state_stack.push_back({});
 
     while(!state_stack.empty()) {
         auto& state = state_stack.front();
@@ -39,7 +40,9 @@ static std::string renderPlainText(const std::string_view input)
             if(state.styles.empty())
                 return state.result;
             else {
-                std::swap(*state_stack.begin(), *state_stack.rbegin());
+                if(state_stack.size() != 1) {
+                    std::swap(*state_stack.begin(), *state_stack.rbegin());
+                }
                 state_stack.pop_back();
                 continue;
             }

@@ -1,5 +1,6 @@
 #include "GeminiParser.hpp"
 #include <regex>
+#include <iostream>
 
 static bool startsWith(const std::string_view sv, const std::string_view target)
 {
@@ -51,7 +52,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
     size_t preformatted_text_start = 0;
     std::string preformatted_text_meta = "";
     for(size_t i=0;i<str.size()+1;i++) {
-        if((i == str.size() && str[i-1] != '\n')|| str[i] == '\n') {
+        if((i == str.size() && str[i-1] != '\n')|| (i < str.size() && str[i] == '\n')) {
             if(in_preformatted_text == false) {
                 std::string_view line(str.data()+last_pos, i-last_pos);
                 auto crlf = line.find_last_not_of("\r\n");
@@ -157,7 +158,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     std::getline(ss, line);
                     if(line.size() > 3)
                         node.meta = line.substr(4);
-                    
+
                     while(std::getline(ss, line)) {
                         if(line.find("```") != 0)
                             content += line + "\n";
