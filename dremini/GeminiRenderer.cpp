@@ -1,11 +1,10 @@
 #include "GeminiRenderer.hpp"
 #include "GeminiParser.hpp"
 #include <algorithm>
-#include <deque>
 #include <drogon/utils/Utilities.h>
 #include <drogon/HttpViewData.h>
 
-#include <deque>
+#include <numeric>
 #include <stack>
 #include <string_view>
 
@@ -30,8 +29,10 @@ static std::string renderPlainText(const std::string_view input)
     if(input.find_first_of("*_`~") == std::string_view::npos)
         return std::string(input);
 
-    std::deque<ParserState> state_stack;
+    std::vector<ParserState> state_stack;
+    state_stack.reserve(5);
     state_stack.push_back({});
+    state_stack.back().result.reserve(input.size() / 2);
 
     while(!state_stack.empty()) {
         auto& state = state_stack.front();
@@ -67,11 +68,13 @@ static std::string renderPlainText(const std::string_view input)
             } else if(state.in_code == false) {
                 auto backtrack_state = state;
                 backtrack_state.result += ch;
-                state_stack.push_back(backtrack_state);
 
                 state.in_code = true;
                 state.result += "<code>";
                 state.styles.push("code");
+
+                // NOTE: Always push at the end to avoid invalidating iterators
+                state_stack.emplace_back(std::move(backtrack_state));
             }
         }
         else if((ch == '*' || ch == '_') && !state.in_code) {
@@ -102,12 +105,13 @@ static std::string renderPlainText(const std::string_view input)
                 } else if(state.in_strong == false && !next_is_space && prev_is_allowed) {
                     auto backtrack_state = state;
                     backtrack_state.result += std::string(2, ch);
-                    state_stack.push_back(backtrack_state);
 
                     state.in_strong = true;
                     state.result += "<strong>";
                     state.styles.push("strong");
                     state.style_symbols.push(ch);
+
+                    state_stack.emplace_back(std::move(backtrack_state));
                 } else {
                     state.result += std::string(2, ch);
                 }
@@ -135,12 +139,13 @@ static std::string renderPlainText(const std::string_view input)
                 } else if(state.in_italic == false && !next_is_space && prev_is_allowed) {
                     auto backtrack_state = state;
                     backtrack_state.result += ch;
-                    state_stack.push_back(backtrack_state);
 
                     state.in_italic = true;
                     state.result += "<i>";
                     state.styles.push("italic");
                     state.style_symbols.push(ch);
+
+                    state_stack.emplace_back(std::move(backtrack_state));
                 } else {
                     state.result += ch;
                 }
@@ -163,12 +168,13 @@ static std::string renderPlainText(const std::string_view input)
                 } else if(state.in_strike == false && !next_is_space) {
                     auto backtrack_state = state;
                     backtrack_state.result += std::string(2, ch);
-                    state_stack.push_back(backtrack_state);
 
                     state.in_strike = true;
                     state.result += "<strike>";
                     state.styles.push("strike");
                     state.style_symbols.push(ch);
+
+                    state_stack.emplace_back(std::move(backtrack_state));
                 } else {
                     state.result += std::string(2, ch);
                 }
@@ -242,13 +248,15 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
     std::string title;
     bool last_is_list = false;
     bool last_is_backquote = false;
-    std::set<std::string> paragrah_names;
+    std::set<std::string> paragraph_names;
+    size_t total_size = std::accumulate(nodes.begin(), nodes.end(), size_t{0}, [](size_t n, auto& node) -> size_t {return n+node.text.size();});
+    res.reserve(total_size);
 
     for(const auto& node : nodes) {
         std::string text = HttpViewData::htmlTranslate(node.text);
 
         if(node.type == "heading1" && title.empty())
-                title = node.text;
+            title = node.text;
 
         if(node.type != "list" && last_is_list == true)
             res += "</ul>\n";
@@ -282,13 +290,13 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 res += "<"+tag+">"+text+"</"+tag+">\n";
             else {
                 std::string id = urlFriendly(text);
-                if(paragrah_names.find(id) != paragrah_names.end()) {
+                if(paragraph_names.find(id) != paragraph_names.end()) {
                     int i = 1;
-                    while(paragrah_names.find(id+"-"+std::to_string(i)) != paragrah_names.end())
+                    while(paragraph_names.find(id+"-"+std::to_string(i)) != paragraph_names.end())
                         i++;
                     id += "-"+std::to_string(i);
                 }
-                paragrah_names.insert(id);
+                paragraph_names.insert(id);
                 res += "<"+tag+"><a href=\"#"+id+"\" id=\""+id+"\">"+text+"</a></"+tag+">\n";
             }
             continue;
