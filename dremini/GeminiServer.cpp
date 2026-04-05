@@ -170,7 +170,7 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
     {
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
-            meta = "Perament Failure";
+            meta = "Permanent Failure";
         respHeader = std::to_string(status) + " " + meta + "\r\n";
     }
     else
