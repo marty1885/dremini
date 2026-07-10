@@ -1,6 +1,7 @@
 #include "GeminiParser.hpp"
 #include <regex>
 #include <iostream>
+#include <sstream>
 
 static bool startsWith(const std::string_view sv, const std::string_view target)
 {

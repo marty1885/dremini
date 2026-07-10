@@ -13,7 +13,7 @@ namespace dremini
  * @param gmi_source The Gemini source.
  * @param extended_mode Whether to use extended mode.
  * @return The rendered HTML.
- * 
+ *
  * Extended mode: Adds support for non gemini standard, Markdown like syntax in the following list
  * - "-" or "=" and is at least 3 chars => horizontal line:
  *    ---
@@ -27,5 +27,12 @@ namespace dremini
  */
 std::pair<std::string, std::string> render2Html(const std::string_view gemini_src, bool extended_mode = false);
 std::pair<std::string, std::string> render2Html(const std::vector<GeminiASTNode>& nodes, bool extended_mode = false);
+
+/**
+ * @brief Render Gemini gemtext to Markdown.
+ * @param nodes The parsed Gemini AST nodes.
+ * @return The rendered Markdown.
+ */
+std::string render2Markdown(const std::vector<GeminiASTNode>& ast);
 
 }

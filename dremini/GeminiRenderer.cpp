@@ -297,7 +297,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     id += "-"+std::to_string(i);
                 }
                 paragraph_names.insert(id);
-                res += "<"+tag+"><a href=\"#"+id+"\" id=\""+id+"\">"+text+"</a></"+tag+">\n";
+                res += "<"+tag+" id=\""+id+"\"><a href=\"#"+id+"\">"+text+"</a></"+tag+">\n";
             }
             continue;
         }
@@ -308,7 +308,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             std::string meta = node.meta;
             if(extended_mode) {
                 // If link to image. We convert it to <img> tag
-                const std::array<std::string_view, 6> img_exts = {".png", ".jpg", ".webp", ".gif", ".jpeg", ".bmp"};
+                const std::array<std::string_view, 7> img_exts = {".png", ".jpg", ".webp", ".gif", ".jpeg", ".bmp", ".svg"};
                 if(std::any_of(img_exts.begin(), img_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
                     const std::string& alt = text;
                     res += "<figure><a href=\"" + meta + "\"><img loading=\"lazy\" src=\"" + meta + "\" alt=\"" + alt + "\" title=\"Image: " + alt + "\"></a><figcaption>Image: "+alt+"</figcaption></figure>";
@@ -453,4 +453,52 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
     else if(last_is_list)
         res += "</ul>\n";
     return {res, HttpViewData::htmlTranslate(title)};
+}
+
+std::string dremini::render2Markdown(const std::vector<GeminiASTNode>& ast) {
+    std::string markdown;
+    markdown.reserve(1024);
+
+    // Render gemtext back to markdown
+    for(const auto& node : ast) {
+        if(node.type == "preformatted_text" && node.meta != "") {
+            // Magic table support
+            if((node.meta == "md" || node.meta == "markdown") && markdown.empty() == false && node.text[0] == '|') {
+                markdown += node.text + "\n";
+                continue;
+            }
+
+            markdown += "```" + node.meta + "\n";
+            markdown += node.text + "\n";
+            markdown += "```\n";
+        }
+        else if(node.type == "list") {
+            markdown += "- " + node.text + "\n";
+        }
+        else if(node.type == "quote") {
+            markdown += "> " + node.text + "\n";
+        }
+        else if(node.type == "link") {
+            markdown += "[" + node.text + "](" + node.meta + ")\n";
+        }
+        else if(node.type == "heading1") {
+            markdown += "# " + node.text + "\n";
+        }
+        else if(node.type == "heading2") {
+            markdown += "## " + node.text + "\n";
+        }
+        else if(node.type == "heading3") {
+            markdown += "### " + node.text + "\n";
+        }
+        else {
+            // Some advanced rendering
+            // Seperators
+            if(node.text.size() >= 3 && (node.text.find_first_not_of("=") == std::string::npos || node.text.find_first_not_of("-") == std::string::npos)) {
+                markdown += "---\n";
+                continue;
+            }
+            markdown += node.text + "\n";
+        }
+    }
+    return markdown;
 }
