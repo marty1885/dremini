@@ -1,4 +1,5 @@
 #include "GeminiParser.hpp"
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
