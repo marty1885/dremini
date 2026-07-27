@@ -8,6 +8,7 @@
 #include <trantor/net/callbacks.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <stdexcept>
 
@@ -92,7 +93,7 @@ void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback
 namespace internal
 {
 
-struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::HttpResponsePtr>
+struct [[nodiscard]] GeminiRespAwaiter
 {
     GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
         , double maxTransferDuration=0)
@@ -100,12 +101,27 @@ struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::
     {
     }
 
+    GeminiRespAwaiter(const GeminiRespAwaiter&) = delete;
+    GeminiRespAwaiter& operator=(const GeminiRespAwaiter&) = delete;
+    GeminiRespAwaiter(GeminiRespAwaiter&&) = default;
+    GeminiRespAwaiter& operator=(GeminiRespAwaiter&&) = default;
+
+    bool await_ready() noexcept
+    {
+        return false;
+    }
+
     void await_suspend(std::coroutine_handle<> handle)
     {
         using namespace drogon;
-        sendRequest(url_, [this, handle](ReqResult res, HttpResponsePtr resp){
+        state_->handle = handle;
+        std::weak_ptr<State> weakState = state_;
+        sendRequest(url_, [weakState](ReqResult res, HttpResponsePtr resp){
+            auto state = weakState.lock();
+            if(!state)
+                return;
             if (res == ReqResult::Ok)
-                setValue(resp);
+                state->response = std::move(resp);
             else
             {
                 std::string reason;
@@ -121,20 +137,34 @@ struct [[nodiscard]] GeminiRespAwaiter : public drogon::CallbackAwaiter<drogon::
                     reason = "HandshakeError";
                 else if(res == ReqResult::InvalidCertificate)
                     reason = "InvalidCertificate";
-                setException(
-                    std::make_exception_ptr(std::runtime_error(reason)));
+                state->exception = std::make_exception_ptr(std::runtime_error(reason));
             }
-            handle.resume();
+            state->handle.resume();
         }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_);
     }
 
+    drogon::HttpResponsePtr await_resume()
+    {
+        if(state_->exception)
+            std::rethrow_exception(state_->exception);
+        return std::move(*state_->response);
+    }
+
 private:
+    struct State
+    {
+        std::optional<drogon::HttpResponsePtr> response;
+        std::exception_ptr exception;
+        std::coroutine_handle<> handle;
+    };
+
     std::string url_;
     trantor::EventLoop* loop_;
     double timeout_;
     intmax_t maxBodySize_;
     std::vector<std::string> mimes_;
     double maxTransferDuration_;
+    std::shared_ptr<State> state_ = std::make_shared<State>();
 };
 }
 
