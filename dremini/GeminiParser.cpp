@@ -1,5 +1,4 @@
 #include "GeminiParser.hpp"
-#include <regex>
 #include <iostream>
 #include <sstream>
 
@@ -53,7 +52,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
     size_t preformatted_text_start = 0;
     std::string preformatted_text_meta = "";
     for(size_t i=0;i<str.size()+1;i++) {
-        if((i == str.size() && str[i-1] != '\n')|| (i < str.size() && str[i] == '\n')) {
+        if((i == str.size() && i != 0 && str[i-1] != '\n')|| (i < str.size() && str[i] == '\n')) {
             if(in_preformatted_text == false) {
                 std::string_view line(str.data()+last_pos, i-last_pos);
                 auto crlf = line.find_last_not_of("\r\n");
@@ -88,45 +87,27 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.type = "link";
                 }
                 else if(startsWith(line, "###")) {
-                    const static std::regex re("### *(.*)");
-                    std::smatch sm;
-                    std::regex_match(node.orig_text, sm, re);
-                    node.text = trim(sm[1]);
+                    node.text = trim(std::string(line.substr(3)));
                     node.type = "heading3";
                 }
                 else if(startsWith(line, "##")) {
-                    const static std::regex re("## *(.*)");
-                    std::smatch sm;
-                    std::regex_match(node.orig_text, sm, re);
-                    node.text = trim(sm[1]);
+                    node.text = trim(std::string(line.substr(2)));
                     node.type = "heading2";
                 }
                 else if(startsWith(line, "#")) {
-                    const static std::regex re("# *(.*)");
-                    std::smatch sm;
-                    std::regex_match(node.orig_text, sm, re);
-                    node.text = trim(sm[1]);
+                    node.text = trim(std::string(line.substr(1)));
                     node.type = "heading1";
                 }
                 else if(startsWith(line, "* ")) {
-                    const static std::regex re(" *\\* *(.*)");
-                    std::smatch sm;
-                    std::regex_match(node.orig_text, sm, re);
-                    node.text = sm[1];
+                    node.text = ltrim(line.substr(1));
                     node.type = "list";
                 }
                 else if(startsWith(line, ">")) {
-                    const static std::regex re(">(.*)");
-                    std::smatch sm;
-                    std::regex_match(node.orig_text, sm, re);
-                    node.text = sm[1];
+                    node.text = line.substr(1);
                     node.type = "quote";
                 }
                 else if(startsWith(line, "```")) {
-                    const static std::regex re("```(.*)");
-                    std::smatch sm;
-                    std::regex_match(node.orig_text, sm, re);
-                    preformatted_text_meta = sm[1];
+                    preformatted_text_meta = line.substr(3);
                     in_preformatted_text = true;
                     preformatted_text_start = last_pos;
                     last_pos = i+1;
