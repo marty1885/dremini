@@ -30,6 +30,17 @@ int main()
             resp->setContentTypeCode(CT_TEXT_PLAIN);
             callback(resp);
         });
+    app().registerHandler("/client-certificate",
+        [](const HttpRequestPtr& req,
+           std::function<void (const HttpResponsePtr &)> &&callback)
+        {
+            auto resp = HttpResponse::newHttpResponse();
+            const auto &certificate = req->peerCertificate();
+            resp->setBody(certificate ? certificate->sha256Fingerprint()
+                                      : "anonymous");
+            resp->setContentTypeCode(CT_TEXT_PLAIN);
+            callback(resp);
+        });
     app().loadConfigFile("drogon.config.json");
 
     app().run();

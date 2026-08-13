@@ -2,6 +2,7 @@
 #include <drogon/HttpAppFramework.h>
 #include <memory>
 #include <regex>
+#include <trantor/net/TLSPolicy.h>
 
 using namespace drogon;
 using namespace dremini;
@@ -16,7 +17,13 @@ GeminiServer::GeminiServer(EventLoop* loop, const InetAddress& listenAddr, const
     }
     LOG_DEBUG << "Creating srver on address " << listenAddr.toIpPort();
 
-    server_.enableSSL(cert, key, false);
+    auto tlsPolicy = trantor::TLSPolicy::defaultServerPolicy(cert, key);
+    // Gemini permits both anonymous clients and clients authenticating with a
+    // self-signed certificate. Request a certificate without requiring one;
+    // application routes decide whether a certificate is necessary.
+    tlsPolicy->setPeerCertificateRequest(false)
+        .setCertificateVerification(false);
+    server_.enableSSL(std::move(tlsPolicy));
     server_.setConnectionCallback([this](const TcpConnectionPtr& conn) {onConnection(conn);});
     server_.setRecvMessageCallback([this](const TcpConnectionPtr& conn, MsgBuffer* buf){onMessage(conn, buf);});
 }
@@ -74,6 +81,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         path = "/";
     req->setMethod(Get);
     req->setPath(path);
+    req->setPeerCertificate(conn->peerCertificate());
     req->addHeader("protocol", "gemini");
     if(!query.empty())
         req->setParameter("query", query);
