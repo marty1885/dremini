@@ -19,7 +19,7 @@ html {
 	color-scheme: dark;
 	background: #171a1d;
 	color: #c5cbd3;
-	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-family: "SFMono-Regular", Consolas, "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace;
 	font-size: 12pt;
 	line-height: 1.45;
 }
@@ -80,7 +80,8 @@ pre {
 	border: 1px solid #506878;
 	border-radius: 0.25rem;
 	color: #d9e7e8;
-	font-family: inherit;
+	font-family: "SFMono-Regular", Consolas, "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace;
+	font-variant-ligatures: none;
 	line-height: 1.35;
 	overflow-x: auto;
 }
