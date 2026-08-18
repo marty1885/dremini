@@ -1,10 +1,13 @@
 #include "GeminiRenderer.hpp"
 #include "GeminiParser.hpp"
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <drogon/utils/Utilities.h>
 #include <drogon/HttpViewData.h>
 
 #include <numeric>
+#include <optional>
 #include <stack>
 #include <string_view>
 
@@ -191,6 +194,66 @@ static std::string renderPlainText(const std::string_view input)
     throw std::runtime_error("Parser ended in an invalid state. This is a bug.");
 }
 
+static std::string htmlEscape(const std::string_view input)
+{
+    return HttpViewData::htmlTranslate(std::string{input});
+}
+
+static bool hasForbiddenUrlCharacter(const std::string_view value)
+{
+    return std::any_of(value.begin(), value.end(), [](const unsigned char character) {
+        return character < 0x20 || character == 0x7f;
+    });
+}
+
+static bool isAllowedUrlScheme(const std::string_view scheme)
+{
+    constexpr std::array<std::string_view, 5> allowed_schemes{
+        "gemini", "titan", "http", "https", "mailto"};
+    return std::any_of(allowed_schemes.begin(), allowed_schemes.end(), [scheme](const auto allowed) {
+        return scheme == allowed;
+    });
+}
+
+// Gemtext link targets are data, not HTML. Do not turn active browser URL
+// schemes such as javascript: or data: into attributes in the HTTP renderer.
+static std::optional<std::string> htmlLinkTarget(std::string_view value)
+{
+    if (value.empty() || value.substr(0, 2) == "//" || hasForbiddenUrlCharacter(value)) return std::nullopt;
+    const auto colon = value.find(':');
+    if (colon != std::string_view::npos)
+    {
+        if (colon == 0) return std::nullopt;
+        for (std::size_t index = 0; index < colon; ++index)
+        {
+            const auto character = static_cast<unsigned char>(value[index]);
+            if (!(std::isalnum(character) || character == '+' || character == '-' || character == '.'))
+                return std::nullopt;
+        }
+        std::string scheme{value.substr(0, colon)};
+        std::transform(scheme.begin(), scheme.end(), scheme.begin(), [](const unsigned char character) {
+            return static_cast<char>(std::tolower(character));
+        });
+        if (!isAllowedUrlScheme(scheme)) return std::nullopt;
+    }
+    return htmlEscape(value);
+}
+
+static bool isSafeYoutubeId(const std::string_view value)
+{
+    return !value.empty() && value.size() <= 32 &&
+           std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+               return std::isalnum(character) || character == '-' || character == '_';
+           });
+}
+
+static bool isDecimal(const std::string_view value)
+{
+    return !value.empty() && std::all_of(value.begin(), value.end(), [](const unsigned char character) {
+        return std::isdigit(character);
+    });
+}
+
 static bool isSingleCharRepeat(const std::string_view str)
 {
     if(str.empty())
@@ -253,7 +316,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
     res.reserve(total_size);
 
     for(const auto& node : nodes) {
-        std::string text = HttpViewData::htmlTranslate(node.text);
+        std::string text = htmlEscape(node.text);
 
         if(node.type == "heading1" && title.empty())
             title = node.text;
@@ -297,33 +360,49 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     id += "-"+std::to_string(i);
                 }
                 paragraph_names.insert(id);
-                res += "<"+tag+" id=\""+id+"\"><a href=\"#"+id+"\">"+text+"</a></"+tag+">\n";
+                const auto escaped_id = htmlEscape(id);
+                res += "<"+tag+" id=\""+escaped_id+"\"><a href=\"#"+escaped_id+"\">"+text+"</a></"+tag+">\n";
             }
             continue;
         }
         else if(node.type == "link")
         {
             if(text.empty())
-                text = HttpViewData::htmlTranslate(node.meta);
+                text = htmlEscape(node.meta);
             std::string meta = node.meta;
+            // Quick and dirty parameter hack
+            auto n = meta.find('?');
+            if(n != std::string::npos && meta.find("gemini://") != 0 && meta.find("http") != 0) {
+                std::string url = meta.substr(0, n);
+                std::string param = meta.substr(n+1);
+                meta = url + "?query=" + param;
+            }
+            const auto link_target = htmlLinkTarget(meta);
+            if (!link_target)
+            {
+                // Keep the label visible, but never create a browser-active
+                // URL from an unsupported Gemtext link target.
+                res += "<div class=\"link\">" + text + "</div>\n";
+                continue;
+            }
             if(extended_mode) {
                 // If link to image. We convert it to <img> tag
                 const std::array<std::string_view, 7> img_exts = {".png", ".jpg", ".webp", ".gif", ".jpeg", ".bmp", ".svg"};
                 if(std::any_of(img_exts.begin(), img_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
                     const std::string& alt = text;
-                    res += "<figure><a href=\"" + meta + "\"><img loading=\"lazy\" src=\"" + meta + "\" alt=\"" + alt + "\" title=\"Image: " + alt + "\"></a><figcaption>Image: "+alt+"</figcaption></figure>";
+                    res += "<figure><a href=\"" + *link_target + "\"><img loading=\"lazy\" src=\"" + *link_target + "\" alt=\"" + alt + "\" title=\"Image: " + alt + "\"></a><figcaption>Image: "+alt+"</figcaption></figure>";
                     continue;
                 }
                 // link to audio (mp3, ogg, wav) => <audio> tag
                 const std::array<std::string_view, 4> audio_exts = {".mp3", ".ogg", ".wav", ".opus"};
                 if(std::any_of(audio_exts.begin(), audio_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
-                    res += "<figure><audio preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the audio element.</audio><figcaption>Audio: "+text+"</figcaption></figure>";
+                    res += "<figure><audio preload=\"none\" controls><source src=\"" + *link_target + "\">Your browser does not support the audio element.</audio><figcaption>Audio: "+text+"</figcaption></figure>";
                     continue;
                 }
                 // link to video (webm, mkv, mp4) => <video> tag
                 const std::array<std::string_view, 3> video_exts = {".webm", ".mkv", ".mp4"};
                 if(std::any_of(video_exts.begin(), video_exts.end(), [&meta](const std::string_view ext) { return meta.rfind(ext) != std::string::npos; })) {
-                    res += "<figure><video style=\"max-width: 100%;\" preload=\"none\" controls><source src=\"" + meta + "\">Your browser does not support the video element.</video><figcaption>Video: "+text+"</figcaption></figure>";
+                    res += "<figure><video style=\"max-width: 100%;\" preload=\"none\" controls><source src=\"" + *link_target + "\">Your browser does not support the video element.</video><figcaption>Video: "+text+"</figcaption></figure>";
                     continue;
                 }
 
@@ -345,28 +424,21 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                         }
                     }
                 }
-                if(!youtube_id.empty()) {
+                if(isSafeYoutubeId(youtube_id) && (timecode.empty() || isDecimal(timecode))) {
                     auto embed_url = "https://www.youtube.com/embed/"+youtube_id;
                     if(!timecode.empty())
                         embed_url += "?start="+timecode;
                     auto iframe = "<iframe width=\"560\" height=\"315\" src=\""+embed_url+"\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
                     res += "<figure><div class=\"ytwrapper_outer\"><div class=\"ytwrapper\">"
-                        + iframe + "</div></div><figcaption>Youtube video: <a href=\""+meta+"\" target=\"_blank\">"+text+"</a></figcaption></figure>";
+                        + iframe + "</div></div><figcaption>Youtube video: <a href=\""+*link_target+"\" target=\"_blank\">"+text+"</a></figcaption></figure>";
                     continue;
                 }
-            }
-            // Quick and dirty parameter hack
-            auto n = meta.find('?');
-            if(n != std::string::npos && meta.find("gemini://") != 0 && meta.find("http") != 0) {
-                std::string url = meta.substr(0, n);
-                std::string param = meta.substr(n+1);
-                meta = url + "?query=" + param;
             }
             // Open new tab if external link
             // HACK: Port TLGS's URL parser and use that to determine if external link
             bool is_external = meta.find("://") != std::string::npos;
-            std::string target = is_external ? "_blank" : "_self";
-            res += "<div class=\"link\"><a href=\""+meta+"\" target=\""+target+"\">"+text+"</a></div>\n";
+            std::string frame_target = is_external ? "_blank" : "_self";
+            res += "<div class=\"link\"><a href=\""+*link_target+"\" target=\""+frame_target+"\">"+text+"</a></div>\n";
         }
         else if(node.type == "preformatted_text") {
             if(extended_mode) {
@@ -421,11 +493,23 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
             }
             bool meta_could_be_language = node.meta.find_first_of(" *'\"/\\()[]{};><`") == std::string::npos
                 && node.meta == utils::urlEncode(node.meta) && !node.meta.empty();
+            const bool has_caption = !node.meta.empty();
+            if (has_caption)
+            {
+                res += "<figure class=\"preformatted\"><figcaption>";
+                res += htmlEscape(node.meta);
+                res += "</figcaption>";
+            }
             if(extended_mode && meta_could_be_language) {
-                res += "<pre><code class=\"language-"+node.meta+"\">"+text+"</code></pre>\n";
+                res += "<pre><code class=\"language-"+htmlEscape(node.meta)+"\">"+text+"</code></pre>";
             }
             else
-                res += "<pre><code>"+text+"</code></pre>\n";
+                res += "<pre><code>"+text+"</code></pre>";
+
+            if (has_caption)
+                res += "</figure>\n";
+            else
+                res += "\n";
         }
         if(node.type == "list") {
             if(last_is_list == false)

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <random>
 #include <list>
+#include <atomic>
 
 using namespace drogon;
 
@@ -74,13 +75,14 @@ namespace dremini
 namespace internal
 {
 
-GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize, double maxTransferDuration)
-    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), maxTransferDuration_(maxTransferDuration)
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize, double maxTransferDuration,
+                           ServerTrust trust)
+    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), maxTransferDuration_(maxTransferDuration), trust_(std::move(trust))
 {
     static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
     std::smatch match;
     if(!std::regex_match(url, match, re))
-        throw std::invalid_argument(url + " is no a valid url");
+        throw std::invalid_argument("request is not a valid Gemini URL");
 
     std::string protocol = match[1];
     host_ = match[2];
@@ -104,6 +106,7 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
         url_ = url + "/";
     else
         url_ = url;
+
 }
 
 static thread_local std::shared_ptr<trantor::Resolver> resolver;
@@ -212,7 +215,7 @@ void GeminiClient::sendRequestInLoop()
             thisPtr->onRecvMessage(connPtr, msg);
         }
     });
-    client_->setConnectionCallback([weakPtr, this](const trantor::TcpConnectionPtr &connPtr) {
+    client_->setConnectionCallback([weakPtr](const trantor::TcpConnectionPtr &connPtr) {
         auto thisPtr = weakPtr.lock();
         if(!thisPtr)
             return;
@@ -220,12 +223,58 @@ void GeminiClient::sendRequestInLoop()
 
         if(connPtr->connected())
         {
-            LOG_TRACE << "Connected to server. Sending request. URL is: " << url_; 
-            connPtr->send(url_ + "\r\n");
+            if (thisPtr->trustStarted_)
+                return;
+            const auto certificate = connPtr->peerCertificate();
+            if (!certificate)
+            {
+                thisPtr->haveResult(ReqResult::InvalidCertificate, nullptr);
+                connPtr->forceClose();
+                return;
+            }
+            thisPtr->trustStarted_ = true;
+            const auto decision = std::make_shared<std::atomic_bool>(false);
+            const std::weak_ptr<trantor::TcpConnection> weakConnection = connPtr;
+            try
+            {
+                thisPtr->trust_(thisPtr->host_ + ":" + std::to_string(thisPtr->port_), certificate,
+                    [weakPtr, weakConnection, decision](bool accepted) {
+                        const auto self = weakPtr.lock();
+                        if (!self)
+                            return;
+                        bool expected = false;
+                        if (!decision->compare_exchange_strong(expected, true, std::memory_order_relaxed))
+                            return;
+                        self->loop_->runInLoop([weakPtr, weakConnection, accepted] {
+                            const auto self = weakPtr.lock();
+                            const auto connection = weakConnection.lock();
+                            if (!self || !connection)
+                                return;
+                            if (!connection->connected())
+                            {
+                                self->haveResult(ReqResult::NetworkFailure, nullptr);
+                                return;
+                            }
+                            if (!accepted)
+                            {
+                                self->haveResult(ReqResult::InvalidCertificate, nullptr);
+                                connection->forceClose();
+                                return;
+                            }
+                            LOG_TRACE << "Gemini server certificate accepted; sending request";
+                            connection->send(self->url_ + "\r\n");
+                        });
+                    });
+            }
+            catch (...)
+            {
+                thisPtr->haveResult(ReqResult::InvalidCertificate, nullptr);
+                connPtr->forceClose();
+            }
         }
         else
         {
-            haveResult(ReqResult::Ok, connPtr->getRecvBuffer());
+            thisPtr->haveResult(ReqResult::Ok, connPtr->getRecvBuffer());
         }
     });
     client_->setSSLErrorCallback([weakPtr](trantor::SSLError err) {
@@ -353,9 +402,10 @@ static std::list<std::shared_ptr<internal::GeminiClient>> holder;
 static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
-    , double maxTransferDuration)
+    , double maxTransferDuration, ServerTrust trust)
 {
-    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
+    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration,
+                                                                      std::move(trust));
     decltype(holder)::iterator it;
     {
         std::lock_guard<std::mutex> lock(holderMutex);

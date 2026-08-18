@@ -41,6 +41,27 @@ int main()
             resp->setContentTypeCode(CT_TEXT_PLAIN);
             callback(resp);
         });
+    app().registerHandler("/titan/edit",
+        [](const HttpRequestPtr& req,
+           std::function<void (const HttpResponsePtr &)> &&callback)
+        {
+            auto resp = HttpResponse::newHttpResponse();
+            resp->setBody(req->methodString() + std::string{"|"} + req->path() + "|" +
+                          req->getHeader("titan-edit"));
+            resp->setContentTypeCode(CT_TEXT_PLAIN);
+            callback(resp);
+        }, {Get});
+    app().registerHandler("/titan/upload",
+        [](const HttpRequestPtr& req,
+           std::function<void (const HttpResponsePtr &)> &&callback)
+        {
+            auto resp = HttpResponse::newHttpResponse();
+            resp->setBody(req->methodString() + std::string{"|"} + req->path() + "|" +
+                          std::string{req->body()} + "|" + req->getHeader("content-type") + "|" +
+                          req->getHeader("titan-token"));
+            resp->setContentTypeCode(CT_TEXT_PLAIN);
+            callback(resp);
+        }, {Post});
     app().loadConfigFile("drogon.config.json");
 
     app().run();

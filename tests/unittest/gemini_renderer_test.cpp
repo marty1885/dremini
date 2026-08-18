@@ -49,3 +49,29 @@ DROGON_TEST(GeminiRendererExtended)
     CHECK(render2Html("**~~**", true).first == "<p><strong>~~</strong></p>\n");
 
 }
+
+DROGON_TEST(GeminiRendererEscapesLinkTargets)
+{
+    const std::vector<GeminiASTNode> active_link{{"", "unsafe", "link", "javascript:alert(1)"}};
+    CHECK(render2Html(active_link).first == "<div class=\"link\">unsafe</div>\n");
+
+    const std::vector<GeminiASTNode> quoted_link{{
+        "", "safe", "link", "https://example.test/\" onclick=\"alert(1)"}};
+    const auto html = render2Html(quoted_link).first;
+    CHECK(html.find("href=\"https://example.test/\" onclick") == std::string::npos);
+    CHECK(html.find("href=\"https://example.test/&quot;") != std::string::npos);
+}
+
+DROGON_TEST(GeminiRendererShowsPreformattedAltText)
+{
+    const std::vector<GeminiASTNode> preformatted{{
+        "", "example", "preformatted_text", "cryptographic material"}};
+    CHECK(render2Html(preformatted).first ==
+          "<figure class=\"preformatted\"><figcaption>cryptographic material</figcaption>"
+          "<pre><code>example</code></pre></figure>\n");
+
+    const std::vector<GeminiASTNode> escaped_alt{{
+        "", "example", "preformatted_text", "<untrusted>"}};
+    const auto escaped_html = render2Html(escaped_alt).first;
+    CHECK(escaped_html.find("<figcaption>&lt;untrusted&gt;</figcaption>") != std::string::npos);
+}

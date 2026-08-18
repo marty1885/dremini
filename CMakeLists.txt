@@ -9,6 +9,7 @@ add_library(dremini STATIC)
 target_sources(dremini PRIVATE dremini/GeminiClient.cpp
     dremini/GeminiServer.cpp
     dremini/GeminiServerPlugin.cpp
+    dremini/Titan.cpp
     dremini/GeminiRenderer.cpp
     dremini/GeminiParser.cpp)
 target_include_directories(dremini PUBLIC .)
@@ -32,4 +33,3 @@ option(DREMINI_BUILD_TEST "Build Dremini tests" ON)
 if(DREMINI_BUILD_TEST)
     add_subdirectory(tests)
 endif()
-

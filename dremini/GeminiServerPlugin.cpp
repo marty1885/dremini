@@ -1,9 +1,11 @@
 #include <dremini/GeminiServerPlugin.hpp>
 #include <dremini/GeminiServer.hpp>
 #include <dremini/GeminiRenderer.hpp>
+#include <dremini/Titan.hpp>
 #include <drogon/HttpAppFramework.h>
 #include <drogon/utils/Utilities.h>
 #include <json/value.h>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <trantor/net/EventLoopThreadPool.h>
@@ -14,156 +16,178 @@ using namespace trantor;
 
 static const std::string_view cssTemplate = R"zz(
 html {
-	font-family: 'consolas', monospace;
-	color: #a9a9a9;
-	font-size: 11pt;
+	color-scheme: dark;
+	background: #171a1d;
+	color: #c5cbd3;
+	font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	font-size: 12pt;
+	line-height: 1.45;
 }
 
 body {
-	background: #202020;
 	max-width: 62.841em;
 	margin: 0 auto;
-	padding: 1rem 2rem;
+	padding: 1.5rem 2rem 3rem;
+}
+
+h1, h2, h3 {
+	color: #f2c7dd;
+	line-height: 1.3;
+	margin: 1.75rem 0 0.75rem;
 }
 
 h1 {
-	color: #FFAA00;
 	font-size: 20pt;
 }
 
 h2 {
-	color: #E08000;
 	font-size: 15pt;
 }
 
 h3 {
-	color: #C06000;
 	font-size: 12pt;
 }
 
-blockquote {
-	background-color: #333;
-	border-left: 3px solid #444;
-	margin: 0 -1rem 0 calc(-1rem - 3px);
-	padding: 1rem;
-}
-
-ul {
-	margin-left: 0;
-	padding: 0;
-}
-
-li {
-	padding: 0;
-}
-
-li:not(:last-child) {
-	margin-bottom: 0.5rem;
-}
-
-a:before {
-	content: '⇒';
-	color: #999;
+h1:before, h2:before, h3:before, a:before {
+	color: #8090a5;
+	font-weight: normal;
 	text-decoration: none;
-    display:inline-block;
-	font-weight: bold;
-	position: relative;
-	left: -1.25rem;
 }
 
 h1:before {
-	content: '#';
-	color: #AAA;
-	text-decoration: none;
-	font-weight: bold;
-	position: relative;
-	left: -1.25rem;
+	content: '# ';
 }
 
 h2:before {
-	content: '##';
-	color: #AAA;
-	text-decoration: none;
-	font-weight: bold;
-	position: relative;
-	left: -1.25rem;
+	content: '## ';
 }
 
 h3:before {
-	content: '###';
-	color: #AAA;
-	text-decoration: none;
-	font-weight: bold;
-	position: relative;
-	left: -1.25rem;
+	content: '### ';
+}
+
+blockquote {
+	margin: 1rem 0;
+	padding-left: 1rem;
+	border-left: 3px solid #4a5d74;
+	color: #aeb7c2;
 }
 
 pre {
-	background-color: #202020;
-	/* color: #40c9ff; */
-        color: #fff;
-	margin: 0 -1rem;
+	margin: 1rem 0;
 	padding: 1rem;
+	background: #20282d;
+	border: 1px solid #506878;
+	border-radius: 0.25rem;
+	color: #d9e7e8;
+	font-family: inherit;
+	line-height: 1.35;
 	overflow-x: auto;
-        line-height: calc(1em + 1px);
-        font-family: 'consolas'
+}
+
+pre code {
+	color: inherit;
+}
+
+.preformatted {
+	margin: 1rem 0;
+}
+
+.preformatted figcaption {
+	display: inline-block;
+	padding: 0.2rem 0.55rem;
+	background: #28343c;
+	border: 1px solid #506878;
+	border-bottom: 0;
+	border-radius: 0.25rem 0.25rem 0 0;
+	color: #aebdcb;
+	font-size: 0.82em;
+	line-height: 1.25;
+}
+
+.preformatted pre {
+	margin: 0;
+	border-top-left-radius: 0;
+}
+
+ul {
+	padding-left: 1.5rem;
+}
+
+li + li {
+	margin-top: 0.35rem;
+}
+
+a {
+	color: #a9c8ff;
+	text-decoration-color: #7196cb;
+	text-underline-offset: 0.16em;
+}
+
+a:visited {
+	color: #c6abd8;
+}
+
+a:before {
+	content: '⇒ ';
+}
+
+a:focus-visible, input:focus-visible {
+	outline: 2px solid #f2c7dd;
+	outline-offset: 2px;
+}
+
+hr {
+	border: 0;
+	border-top: 1px solid #4a5d74;
+	margin: 2rem 0;
 }
 
 details:not([open]) summary,
 details:not([open]) summary a {
-	color: gray;
-}
-
-details summary a:before {
-	display: none;
-}
-
-dl dt {
-	font-weight: bold;
-}
-
-dl dt:not(:first-child) {
-	margin-top: 0.5rem;
-}
-
-a {
-	color: #00FF00;
-    position: relative;
-}
-
-a:visited {
-	color: #008000;
+	color: #9aa6b5;
 }
 
 label {
 	display: block;
+	color: #f2c7dd;
 	font-weight: bold;
-	margin-bottom: 0.5rem;
+	margin-bottom: 0.45rem;
 }
 
 input {
 	display: block;
-	border: 1px solid #888;
-	padding: .375rem;
-	line-height: 1.25rem;
-	transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+	border: 1px solid #506878;
+	border-radius: 0;
+	background: #20282d;
+	color: #d9e7e8;
+	padding: 0.65rem 0.75rem;
+	font: inherit;
 	width: 100%;
 }
 
-input:focus {
-	outline: 0;
-	border-color: #80bdff;
-	box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
-}
-
 input[type="submit"]{
-        margin-top: 0.5rem;
-        width: auto;
+	margin-top: 0.85rem;
+	width: auto;
+	cursor: pointer;
+	background: #29363e;
+	border-color: #7196cb;
+	color: #d9e7e8;
+	font-weight: bold;
 }
 
 .link {
-    margin-top:0.5rem;
-    width: 100%;
+	margin: 0.5rem 0;
+}
+
+@media (max-width: 38rem) {
+	html {
+		font-size: 16px;
+	}
+
+	body {
+		padding: 1.25rem 1rem 2rem;
+	}
 }
 
 )zz";
@@ -232,6 +256,8 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
 
     pool_ = std::make_shared<trantor::EventLoopThreadPool>(numThread, "GeminiServerThreadPool");
 
+    installTitanRoutingAdvice();
+
 
     const auto& listeners = config["listeners"];
     if(listeners.isNull())
@@ -263,6 +289,21 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 exit(1);
             }
 
+            TitanOptions titanOptions;
+            const auto& titan = listener.isMember("titan") ? listener["titan"] : config["titan"];
+            if (!titan.isNull())
+            {
+                titanOptions.enabled = titan.get("enabled", false).asBool();
+                const auto maximum = titan.get(
+                    "max_upload_bytes", static_cast<Json::Int64>(titanOptions.maxUploadBytes)).asInt64();
+                if (maximum < 0 || static_cast<std::uint64_t>(maximum) > std::numeric_limits<std::size_t>::max())
+                {
+                    LOG_FATAL << "Titan max_upload_bytes must fit in size_t";
+                    exit(1);
+                }
+                titanOptions.maxUploadBytes = static_cast<std::size_t>(maximum);
+            }
+
             bool isV6 = ip.find(":") != std::string::npos;
             InetAddress addr(ip, port, isV6);
             if(addr.isUnspecified())
@@ -270,7 +311,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 LOG_FATAL << ip << " is not a valid IP address";
             }
 
-            auto server = std::make_unique<GeminiServer>(app().getLoop(), addr, key, cert);
+            auto server = std::make_unique<GeminiServer>(app().getLoop(), addr, key, cert, titanOptions);
             server->setIoLoopThreadPool(pool_);
             server->start();
             servers_.emplace_back(std::move(server));
@@ -308,7 +349,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             {
                 auto [body, title] = render2Html(resp->body());
                 if(title.empty())
-                    title = req->path();
+                    title = HttpViewData::htmlTranslate(req->path());
                 std::string html = std::string(htmlTemplate);
                 // HACK: Should use a more effectent way to compile HTML
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_BODY_123456789__", body);
@@ -321,7 +362,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             {
                 bool sensitive_input = req->getHeader("gemini-status") == "11";
                 std::string html = std::string(userInputTemplate);
-                std::string title = resp->getHeader("meta");
+                std::string title = HttpViewData::htmlTranslate(resp->getHeader("meta"));
                 // HACK: Should use a more effectent way to compile HTML
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_TITLE_123456789__", title);
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
@@ -337,4 +378,3 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
 void GeminiServerPlugin::shutdown()
 {
 }
-

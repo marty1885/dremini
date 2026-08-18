@@ -2,7 +2,7 @@
 
 Highly concurrent and multi-threaded gemini client and server library for the [Drogon web application framework](https://github.com/drogonframework/drogon)
 
-**This library is in early development. API may clange without notice**
+**Also with Titan support**
 
 ## Dependencies
 
@@ -168,13 +168,8 @@ Gemini URLs supports a query parameter using the `?` symbol. For example, `gemin
 
 ### Detecting Gemini requests
 
-Dremini adds a `protocol` header to the proxyed HTTP request to singnal it's comming from a Gemini request. Whom's value is always "gemini"
+Dremini adds a `protocol` header to the proxyed HTTP request to singnal it's comming from a Gemini request. Whom's value is always "gemini". For Titan uploads, `protocol` is "titan".
 
 ### Translating Gemini into HTML for HTTP requests
 
 Dermini supports translating Gemini into HTML automatically! Add `"translate_to_html": true` into plugin config. This makes Dremini translate `text/gemini` contents into HTML when a regular browser requests content
-
-## Limitations
-
-Dremini library does not verify server and client certificates yet. Nor client certs are supported.
-

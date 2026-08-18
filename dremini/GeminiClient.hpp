@@ -11,6 +11,8 @@
 #include <optional>
 #include <string>
 #include <stdexcept>
+#include <functional>
+#include <trantor/net/Certificate.h>
 
 #ifdef __cpp_impl_coroutine
 #include <drogon/utils/coroutine.h>
@@ -26,13 +28,23 @@ class Resolver;
 namespace dremini
 {
 
+using ServerTrustDecision = std::function<void(bool accept)>;
+// May retain and invoke the decision asynchronously. The request is not sent
+// until the callback accepts the certificate.
+using ServerTrust = std::function<void(std::string endpoint,
+                                       trantor::CertificatePtr certificate,
+                                       ServerTrustDecision decide)>;
+inline const ServerTrust kNoVerification =
+    [](std::string, trantor::CertificatePtr, ServerTrustDecision decide) { decide(true); };
+
 namespace internal
 {
 
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900,
+                 ServerTrust trust = kNoVerification);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
@@ -81,13 +93,15 @@ protected:
     std::vector<std::string> downloadMimes_;
     trantor::TimerId transferTimerId_;
     bool callbackCalled_ = false;
+    ServerTrust trust_;
+    bool trustStarted_ = false;
 };
 
 }
 
 void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
-    , double maxTransferDuration=0);
+    , double maxTransferDuration=0, ServerTrust trust = kNoVerification);
 
 #ifdef __cpp_impl_coroutine
 namespace internal
@@ -96,8 +110,9 @@ namespace internal
 struct [[nodiscard]] GeminiRespAwaiter
 {
     GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
-        , double maxTransferDuration=0)
-        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes), maxTransferDuration_(maxTransferDuration)
+        , double maxTransferDuration=0, ServerTrust trust = kNoVerification)
+        : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes), maxTransferDuration_(maxTransferDuration),
+          trust_(std::move(trust))
     {
     }
 
@@ -140,7 +155,7 @@ struct [[nodiscard]] GeminiRespAwaiter
                 state->exception = std::make_exception_ptr(std::runtime_error(reason));
             }
             state->handle.resume();
-        }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_);
+        }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_, std::move(trust_));
     }
 
     drogon::HttpResponsePtr await_resume()
@@ -164,15 +179,16 @@ private:
     intmax_t maxBodySize_;
     std::vector<std::string> mimes_;
     double maxTransferDuration_;
+    ServerTrust trust_;
     std::shared_ptr<State> state_ = std::make_shared<State>();
 };
 }
 
 inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
-    , double maxTransferDuration = 0)
+    , double maxTransferDuration = 0, ServerTrust trust = kNoVerification)
 {
-    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes, maxTransferDuration);
+    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes, maxTransferDuration, std::move(trust));
 }
 
 #endif
