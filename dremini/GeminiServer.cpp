@@ -189,9 +189,16 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         return;
     }
 
-    // Gemini has no body. Preserve the old behavior of ignoring unexpected
-    // trailing bytes, while Titan consumes only its declared payload.
-    buf->retrieveAll();
+    // Gemini has no body and supports exactly one request per connection. If
+    // bytes have already arrived after the request line, reject the request
+    // instead of silently dropping them. Data that arrives after dispatch is
+    // deliberately not treated as part of this request: async receive timing
+    // must not change the request state that has already been handed off.
+    if (buf->readableBytes() != 0)
+    {
+        rejectRequest(conn, 59, "Gemini request must not include trailing data");
+        return;
+    }
     LOG_TRACE << "Gemini request received";
     dispatchRequest(conn, std::move(req));
 }
