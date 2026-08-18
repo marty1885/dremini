@@ -208,8 +208,8 @@ static bool hasForbiddenUrlCharacter(const std::string_view value)
 
 static bool isAllowedUrlScheme(const std::string_view scheme)
 {
-    constexpr std::array<std::string_view, 5> allowed_schemes{
-        "gemini", "titan", "http", "https", "mailto"};
+    constexpr std::array<std::string_view, 8> allowed_schemes{
+        "gemini", "titan", "http", "https", "mailto", "misfin", "spartan", "gopher"};
     return std::any_of(allowed_schemes.begin(), allowed_schemes.end(), [scheme](const auto allowed) {
         return scheme == allowed;
     });
