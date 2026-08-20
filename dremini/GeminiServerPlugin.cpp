@@ -389,13 +389,21 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 // HACK: Should use a more effectent way to compile HTML
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_TITLE_123456789__", title);
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
+                drogon::utils::replaceAll(html, "__THIS_IS_TYPE_123456789__", sensitive_input ? "password" : "text");
                 resp->setBody(html);
                 resp->setStatusCode(k200OK);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
             else if(resp->getHeader("gemini-status") != "" && try_stoi(resp->getHeader("gemini-status")).value_or(-1) == 60)
             {
-
+                std::string html = std::string(certificateRequiredTemplate);
+                std::string title = HttpViewData::htmlTranslate(resp->getHeader("meta"));
+                // HACK: Should use a more effectent way to compile HTML
+                drogon::utils::replaceAll(html, "__THIS_IS_THIS_TITLE_123456789__", title);
+                drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
+                resp->setBody(html);
+                resp->setStatusCode(k200OK);
+                resp->setContentTypeCode(CT_TEXT_HTML);
             }
         });
     }
