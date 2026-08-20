@@ -234,6 +234,28 @@ static const std::string_view userInputTemplate = R"zz(
 </html>
 )zz";
 
+static const std::string_view certificateRequiredTemplate = R"zz(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>__THIS_IS_THIS_TITLE_123456789__</title>
+</head>
+<body>
+<style type="text/css">
+    __THIS_IS_THIS_CSS_123456789__
+</style>
+<form action="" method="get">
+    <p>__THIS_IS_THIS_TITLE_123456789__</p>
+    <br>
+    <p>A certificate is required to access this page. This feature may not be avaliable over HTTP.</p>
+    <input type="submit">
+</form>
+</body>
+</html>
+)zz";
+
 static std::optional<int> try_stoi(const std::string_view sv)
 {
     try
@@ -367,10 +389,13 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 // HACK: Should use a more effectent way to compile HTML
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_TITLE_123456789__", title);
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
-                drogon::utils::replaceAll(html, "__THIS_IS_TYPE_123456789__", sensitive_input ? "password" : "text");
                 resp->setBody(html);
                 resp->setStatusCode(k200OK);
                 resp->setContentTypeCode(CT_TEXT_HTML);
+            }
+            else if(resp->getHeader("gemini-status") != "" && try_stoi(resp->getHeader("gemini-status")).value_or(-1) == 60)
+            {
+
             }
         });
     }
