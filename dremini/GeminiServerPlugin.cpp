@@ -248,7 +248,7 @@ static const std::string_view certificateRequiredTemplate = R"zz(
 </style>
 <h1>__THIS_IS_THIS_TITLE_123456789__</h1>
 <br>
-<p>A certificate is required to access this page. This feature may not be avaliable over HTTP.</p>
+<p>A certificate is required to access this page. This feature may not be avaliable over HTTP. We recommend accessing this resource using a native Gemini porotocol browser.</p>
 </body>
 </html>
 )zz";
