@@ -246,12 +246,9 @@ static const std::string_view certificateRequiredTemplate = R"zz(
 <style type="text/css">
     __THIS_IS_THIS_CSS_123456789__
 </style>
-<form action="" method="get">
-    <p>__THIS_IS_THIS_TITLE_123456789__</p>
-    <br>
-    <p>A certificate is required to access this page. This feature may not be avaliable over HTTP.</p>
-    <input type="submit">
-</form>
+<h1>__THIS_IS_THIS_TITLE_123456789__</h1>
+<br>
+<p>A certificate is required to access this page. This feature may not be avaliable over HTTP.</p>
 </body>
 </html>
 )zz";
@@ -402,7 +399,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_TITLE_123456789__", title);
                 drogon::utils::replaceAll(html, "__THIS_IS_THIS_CSS_123456789__", std::string(cssTemplate));
                 resp->setBody(html);
-                resp->setStatusCode(k200OK);
+                resp->setStatusCode(k412PreconditionFailed);
                 resp->setContentTypeCode(CT_TEXT_HTML);
             }
         });
