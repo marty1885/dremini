@@ -74,7 +74,7 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
                            ServerTrust trust)
     : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), maxTransferDuration_(maxTransferDuration), trust_(std::move(trust))
 {
-    static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
+    static const std::regex re(R"(([a-z]+):\/\/([^\/?#:]+)(?:\:([0-9]+))?($|[\/?#].*))");
     std::smatch match;
     if(!std::regex_match(url, match, re))
         throw std::invalid_argument("request is not a valid Gemini URL");
@@ -104,7 +104,6 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
 
 }
 
-static thread_local std::shared_ptr<trantor::Resolver> resolver;
 void GeminiClient::fire()
 {
     if(isIPString(host_))
@@ -119,9 +118,10 @@ void GeminiClient::fire()
     }
 
     loop_->runInLoop([thisPtr=shared_from_this()](){
-        if(!resolver)
-            resolver = trantor::Resolver::newResolver(thisPtr->loop_, 10);
-        resolver->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
+        // A resolver belongs to its event loop. Keep this request's resolver alive
+        // through its callback instead of reusing one created for another loop.
+        auto resolver = trantor::Resolver::newResolver(thisPtr->loop_, 10);
+        resolver->resolve(thisPtr->host_, [thisPtr, resolver](const trantor::InetAddress &addr){
             if(addr.ipNetEndian() == 0)
             {
                 thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
@@ -173,9 +173,9 @@ void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer
         httpStatus = 504;
     else if(responseStatus_ == 44)
         httpStatus = 503;
-    else if(responseStatus_%10 == 4)
+    else if(responseStatus_/10 == 4)
         httpStatus = 500;
-    else if(responseStatus_%10 == 5)
+    else if(responseStatus_/10 == 5)
         httpStatus = 400;
     else
         httpStatus = responseStatus_/10*100 + responseStatus_%10;

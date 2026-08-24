@@ -28,6 +28,10 @@ struct ParserState
 
 static std::string renderPlainText(const std::string_view input)
 {
+    // Each speculative state duplicates the accumulated output. Limit the
+    // alternatives so deliberately unbalanced marker sequences remain linear
+    // in input size rather than growing exponentially.
+    constexpr size_t max_backtrack_states = 8;
     // No special character -> No need to parse
     if(input.find_first_of("*_`~") == std::string_view::npos)
         return std::string(input);
@@ -77,7 +81,8 @@ static std::string renderPlainText(const std::string_view input)
                 state.styles.push("code");
 
                 // NOTE: Always push at the end to avoid invalidating iterators
-                state_stack.emplace_back(std::move(backtrack_state));
+                if(state_stack.size() < max_backtrack_states)
+                    state_stack.emplace_back(std::move(backtrack_state));
             }
         }
         else if((ch == '*' || ch == '_') && !state.in_code) {
@@ -114,7 +119,8 @@ static std::string renderPlainText(const std::string_view input)
                     state.styles.push("strong");
                     state.style_symbols.push(ch);
 
-                    state_stack.emplace_back(std::move(backtrack_state));
+                    if(state_stack.size() < max_backtrack_states)
+                        state_stack.emplace_back(std::move(backtrack_state));
                 } else {
                     state.result += std::string(2, ch);
                 }
@@ -148,7 +154,8 @@ static std::string renderPlainText(const std::string_view input)
                     state.styles.push("italic");
                     state.style_symbols.push(ch);
 
-                    state_stack.emplace_back(std::move(backtrack_state));
+                    if(state_stack.size() < max_backtrack_states)
+                        state_stack.emplace_back(std::move(backtrack_state));
                 } else {
                     state.result += ch;
                 }
@@ -176,7 +183,8 @@ static std::string renderPlainText(const std::string_view input)
                     state.styles.push("strike");
                     state.style_symbols.push(ch);
 
-                    state_stack.emplace_back(std::move(backtrack_state));
+                    if(state_stack.size() < max_backtrack_states)
+                        state_stack.emplace_back(std::move(backtrack_state));
                 } else {
                     state.result += std::string(2, ch);
                 }
@@ -190,7 +198,10 @@ static std::string renderPlainText(const std::string_view input)
         }
     }
 
-    throw std::runtime_error("Parser ended in an invalid state. This is a bug.");
+    // Formatting is optional. If every speculative parse is invalid, retain
+    // the already escaped source as plain text rather than throwing from a
+    // request callback.
+    return std::string(input);
 }
 
 static std::string htmlEscape(const std::string_view input)
@@ -411,7 +422,7 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                 std::string timecode;
                 auto it = std::find_if(youtube_url_prefixes.begin(), youtube_url_prefixes.end(), [&meta](const std::string_view prefix) { return meta.find(prefix) == 0; });
                 if(it != youtube_url_prefixes.end()) {
-                    size_t param_pos = meta.find_first_of("?&");
+                    size_t param_pos = meta.find_first_of("?&", it->size());
                     size_t id_len = param_pos != std::string::npos ? param_pos-it->size() : std::string::npos;
                     youtube_id = meta.substr(it->size(), id_len);
                     if(param_pos != std::string::npos) {

@@ -84,3 +84,29 @@ DROGON_TEST(GeminiRendererShowsPreformattedAltText)
     const auto escaped_html = render2Html(escaped_alt).first;
     CHECK(escaped_html.find("<figcaption>&lt;untrusted&gt;</figcaption>") != std::string::npos);
 }
+
+DROGON_TEST(GeminiParserHandlesUnclosedPreformattedText)
+{
+    const auto nodes = parseGemini("``` cpp  \nint main() {}\n");
+    REQUIRE(nodes.size() == 1);
+    CHECK(nodes[0].type == "preformatted_text");
+    CHECK(nodes[0].meta == "cpp");
+    CHECK(nodes[0].text == "int main() {}\n");
+    CHECK(render2Html(nodes, true).first.find("class=\"language-cpp\"") != std::string::npos);
+}
+
+DROGON_TEST(GeminiRendererParsesYoutubeParameters)
+{
+    const std::vector<GeminiASTNode> link{{"", "video", "link",
+                                           "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30"}};
+    const auto html = render2Html(link, true).first;
+    CHECK(html.find("https://www.youtube.com/embed/dQw4w9WgXcQ?start=30") != std::string::npos);
+}
+
+DROGON_TEST(GeminiRendererBoundsFormattingBacktracking)
+{
+    std::string input;
+    for(size_t i = 0; i < 10000; ++i)
+        input += "*x";
+    CHECK_NOTHROW(render2Html(input, true));
+}

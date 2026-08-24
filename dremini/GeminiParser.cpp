@@ -109,7 +109,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.type = "quote";
                 }
                 else if(startsWith(line, "```")) {
-                    preformatted_text_meta = line.substr(3);
+                    preformatted_text_meta = trim(std::string(line.substr(3)));
                     in_preformatted_text = true;
                     preformatted_text_start = last_pos;
                     last_pos = i+1;
@@ -155,6 +155,26 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                 }
             }
         }
+    }
+    // Gemini preformatted mode ends at EOF when no closing fence is present.
+    if(in_preformatted_text) {
+        std::string_view preformatted_text(str.data()+preformatted_text_start,
+                                           str.size()-preformatted_text_start);
+        GeminiASTNode node;
+        node.orig_text = preformatted_text;
+
+        std::stringstream ss;
+        std::string line;
+        std::string content;
+        ss << preformatted_text;
+        std::getline(ss, line);  // Opening fence and its metadata.
+        while(std::getline(ss, line))
+            content += line + "\n";
+
+        node.text = std::move(content);
+        node.meta = std::move(preformatted_text_meta);
+        node.type = "preformatted_text";
+        nodes.emplace_back(std::move(node));
     }
     return nodes;
 }
