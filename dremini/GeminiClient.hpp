@@ -152,6 +152,10 @@ struct [[nodiscard]] GeminiRespAwaiter
                     reason = "HandshakeError";
                 else if(res == ReqResult::InvalidCertificate)
                     reason = "InvalidCertificate";
+                else if(res == ReqResult::EncryptionFailure)
+                    reason = "EncryptionFailure";
+                else
+                    reason = "Unknown request failure";
                 state->exception = std::make_exception_ptr(std::runtime_error(reason));
             }
             state->handle.resume();

@@ -89,12 +89,10 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
     port_ = 1965;
     if(port.empty() == false)
     {
-        int portNum = std::stoi(port);
-        if(portNum >= 65536 || portNum <= 0)
-        {
-            LOG_ERROR << port << "is not a valid port number";
-        }
-        port_ = portNum;
+        const auto portNum = try_stoi(port);
+        if(!portNum || *portNum <= 0 || *portNum > 65535)
+            throw std::invalid_argument(port + " is not a valid port number");
+        port_ = static_cast<uint16_t>(*portNum);
     }
 
     if(path.empty() && url.back() != '/')
@@ -122,7 +120,7 @@ void GeminiClient::fire()
         // through its callback instead of reusing one created for another loop.
         auto resolver = trantor::Resolver::newResolver(thisPtr->loop_, 10);
         resolver->resolve(thisPtr->host_, [thisPtr, resolver](const trantor::InetAddress &addr){
-            if(addr.ipNetEndian() == 0)
+            if(addr.isUnspecified())
             {
                 thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
                 return;
@@ -407,13 +405,24 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
         it = std::prev(holder.end());
     }
     client->setCallback([callback, it, loop] (ReqResult result, const HttpResponsePtr& resp) mutable {
-        callback(result, resp);
-
+        auto cleanup = [&] {
         std::lock_guard lock(holderMutex);
         loop->queueInLoop([client = std::move(*it)]() {
             // client is destroyed here
         });
         holder.erase(it);
+        };
+
+        try
+        {
+            callback(result, resp);
+        }
+        catch (...)
+        {
+            cleanup();
+            throw;
+        }
+        cleanup();
     });
     client->setMimes(mimes);
     client->fire();

@@ -1,4 +1,5 @@
 #include <drogon/drogon_test.h>
+#include <dremini/GeminiClient.hpp>
 #include <dremini/GeminiRenderer.hpp>
 
 using namespace dremini;
@@ -59,6 +60,12 @@ DROGON_TEST(GeminiRendererMarkdownEmptyPreformattedText)
     CHECK(render2Markdown(ast) == "intro\n```markdown\n\n```\n");
 }
 
+DROGON_TEST(GeminiRendererMarkdownUntaggedPreformattedText)
+{
+    const std::vector<GeminiASTNode> ast{{"", "code", "preformatted_text", ""}};
+    CHECK(render2Markdown(ast) == "```\ncode\n```\n");
+}
+
 DROGON_TEST(GeminiRendererEscapesLinkTargets)
 {
     const std::vector<GeminiASTNode> active_link{{"", "unsafe", "link", "javascript:alert(1)"}};
@@ -101,6 +108,35 @@ DROGON_TEST(GeminiRendererParsesYoutubeParameters)
                                            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30"}};
     const auto html = render2Html(link, true).first;
     CHECK(html.find("https://www.youtube.com/embed/dQw4w9WgXcQ?start=30") != std::string::npos);
+}
+
+DROGON_TEST(GeminiRendererDoesNotMistakeParameterSuffixForYoutubeTimecode)
+{
+    const std::vector<GeminiASTNode> link{{"", "video", "link",
+                                           "https://www.youtube.com/watch?v=dQw4w9WgXcQ&format=1080"}};
+    const auto html = render2Html(link, true).first;
+    CHECK(html.find("https://www.youtube.com/embed/dQw4w9WgXcQ\"") != std::string::npos);
+    CHECK(html.find("?start=") == std::string::npos);
+}
+
+DROGON_TEST(GeminiClientRejectsInvalidPorts)
+{
+    CHECK_NOTHROW(dremini::internal::GeminiClient("gemini://example.test:65535/", nullptr));
+
+    for(const auto& url : {"gemini://example.test:0/", "gemini://example.test:65536/",
+                           "gemini://example.test:999999999999999999999/"})
+    {
+        bool rejected = false;
+        try
+        {
+            dremini::internal::GeminiClient(url, nullptr);
+        }
+        catch(const std::invalid_argument&)
+        {
+            rejected = true;
+        }
+        CHECK(rejected);
+    }
 }
 
 DROGON_TEST(GeminiRendererBoundsFormattingBacktracking)

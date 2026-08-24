@@ -426,11 +426,15 @@ std::pair<std::string, std::string> dremini::render2Html(const std::vector<Gemin
                     size_t id_len = param_pos != std::string::npos ? param_pos-it->size() : std::string::npos;
                     youtube_id = meta.substr(it->size(), id_len);
                     if(param_pos != std::string::npos) {
-                        size_t t_pos = meta.find("t=", param_pos);
-                        if(t_pos != std::string::npos) {
-                            size_t t_end = meta.find('&', t_pos);
-                            size_t t_len = t_end != std::string::npos ? t_end-t_pos-2 : std::string::npos;
-                            timecode = meta.substr(t_pos+2, t_len);
+                        size_t t_pos = param_pos;
+                        while(t_pos != std::string::npos) {
+                            if(meta.compare(t_pos + 1, 2, "t=") == 0) {
+                                size_t t_end = meta.find('&', t_pos);
+                                size_t t_len = t_end != std::string::npos ? t_end-t_pos-3 : std::string::npos;
+                                timecode = meta.substr(t_pos+3, t_len);
+                                break;
+                            }
+                            t_pos = meta.find('&', t_pos + 1);
                         }
                     }
                 }
@@ -555,7 +559,7 @@ std::string dremini::render2Markdown(const std::vector<GeminiASTNode>& ast) {
 
     // Render gemtext back to markdown
     for(const auto& node : ast) {
-        if(node.type == "preformatted_text" && node.meta != "") {
+        if(node.type == "preformatted_text") {
             // Magic table support
             if((node.meta == "md" || node.meta == "markdown") && !markdown.empty() && !node.text.empty() && node.text.front() == '|') {
                 markdown += node.text + "\n";
