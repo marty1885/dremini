@@ -3,8 +3,9 @@
 
 #include <cstddef>
 #include <memory>
-#include <regex>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <trantor/net/TLSPolicy.h>
 
 using namespace drogon;
@@ -14,6 +15,87 @@ using namespace trantor;
 namespace
 {
 constexpr std::size_t kMaxRequestLineBytes = 1024;
+
+struct ParsedRequestLine
+{
+    std::string_view scheme;
+    std::string_view authority;
+    std::string_view path;
+    std::string_view query;
+};
+
+bool isLowercaseAsciiLetter(char value) noexcept
+{
+    return value >= 'a' && value <= 'z';
+}
+
+bool isDecimalDigit(char value) noexcept
+{
+    return value >= '0' && value <= '9';
+}
+
+bool containsUriControl(std::string_view value) noexcept
+{
+    for (const auto character : value)
+    {
+        const auto byte = static_cast<unsigned char>(character);
+        if (byte <= 0x20 || byte == 0x7f) return true;
+    }
+    return false;
+}
+
+// Gemini request lines carry one absolute URI. Keep this parser deliberately
+// linear and bounded by kMaxRequestLineBytes: std::regex is unnecessary on a
+// network boundary and has implementation-dependent resource behaviour.
+std::optional<ParsedRequestLine> parseRequestLine(std::string_view value) noexcept
+{
+    if (containsUriControl(value)) return std::nullopt;
+    const auto schemeEnd = value.find("://");
+    if (schemeEnd == std::string_view::npos || schemeEnd == 0) return std::nullopt;
+    const auto scheme = value.substr(0, schemeEnd);
+    for (const auto character : scheme)
+        if (!isLowercaseAsciiLetter(character)) return std::nullopt;
+
+    std::size_t position = schemeEnd + 3;
+    if (position == value.size()) return std::nullopt;
+    const auto authorityStart = position;
+    if (value[position] == '[')
+    {
+        const auto close = value.find(']', position + 1);
+        if (close == std::string_view::npos || close == position + 1) return std::nullopt;
+        position = close + 1;
+    }
+    else
+    {
+        while (position < value.size() && value[position] != ':' && value[position] != '/' && value[position] != '?')
+            ++position;
+        if (position == authorityStart) return std::nullopt;
+    }
+
+    if (position < value.size() && value[position] == ':')
+    {
+        const auto portStart = ++position;
+        while (position < value.size() && isDecimalDigit(value[position])) ++position;
+        if (position == portStart) return std::nullopt;
+    }
+
+    const auto authority = value.substr(authorityStart, position - authorityStart);
+    std::string_view path;
+    if (position < value.size() && value[position] == '/')
+    {
+        const auto pathStart = position++;
+        while (position < value.size() && value[position] != '?') ++position;
+        path = value.substr(pathStart, position - pathStart);
+    }
+
+    std::string_view query;
+    if (position < value.size())
+    {
+        if (value[position] != '?') return std::nullopt;
+        query = value.substr(position + 1);
+    }
+    return ParsedRequestLine{scheme, authority, path, query};
+}
 
 struct ConnectionState
 {
@@ -105,25 +187,28 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         return;
     }
 
-    std::string url(buf->peek(), std::distance(buf->peek(), crlf));
+    const std::string url(buf->peek(), std::distance(buf->peek(), crlf));
     buf->retrieveUntil(crlf);
     buf->retrieve(2);
 
-    static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?(\/$|$|\/[^?]*)(?:\?(.*))?)");
-    std::smatch match;
-    if(!std::regex_match(url, match, re))
+    const auto parsed = parseRequestLine(url);
+    if (!parsed)
     {
         LOG_TRACE << "Invalid request";
         rejectRequest(conn, 59, "Invalid request");
         return;
     }
 
-    const std::string scheme = match[1];
-    std::string authority = match[2];
-    if (match[3].matched)
-        authority += ":" + match[3].str();
-    std::string path = match[4];
-    std::string query = match[5];
+    const auto scheme = parsed->scheme;
+    if (scheme != "gemini" && scheme != "titan")
+    {
+        LOG_TRACE << "Unsupported request scheme";
+        rejectRequest(conn, 59, "Invalid request");
+        return;
+    }
+    const std::string authority{parsed->authority};
+    std::string path{parsed->path};
+    const std::string query{parsed->query};
     HttpRequestPtr req = HttpRequest::newHttpRequest();
     if(path.empty())
         path = "/";
@@ -251,11 +336,11 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
         status = 43;
     else if(httpStatus == 429) // 429 (Too Many Requests) -> 44 (Slow Down)
         status = 44;
-    else if(httpStatus%100 == 2) // Success -> Success
+    else if(httpStatus/100 == 2) // Success -> Success
         status = 20;
-    else if(httpStatus%100 == 4) // Client Error -> Permanent Failure
+    else if(httpStatus/100 == 4) // Client Error -> Permanent Failure
         status = 50;
-    else if(httpStatus%100 == 5) // Server Error -> Temporary Failure
+    else if(httpStatus/100 == 5) // Server Error -> Temporary Failure
         status = 40;
     else
         status = httpStatus/100*10;
