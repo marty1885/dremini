@@ -167,7 +167,6 @@ static std::string renderPlainText(const std::string_view input)
                     state.result += "</strike>";
                     state.styles.pop();
                     state.style_symbols.pop();
-                    state_stack.pop_back();
                 } else if(state.in_strike == false && !next_is_space) {
                     auto backtrack_state = state;
                     backtrack_state.result += std::string(2, ch);
@@ -547,7 +546,7 @@ std::string dremini::render2Markdown(const std::vector<GeminiASTNode>& ast) {
     for(const auto& node : ast) {
         if(node.type == "preformatted_text" && node.meta != "") {
             // Magic table support
-            if((node.meta == "md" || node.meta == "markdown") && markdown.empty() == false && node.text[0] == '|') {
+            if((node.meta == "md" || node.meta == "markdown") && !markdown.empty() && !node.text.empty() && node.text.front() == '|') {
                 markdown += node.text + "\n";
                 continue;
             }

@@ -5,6 +5,7 @@
 #include <drogon/HttpAppFramework.h>
 #include <drogon/utils/Utilities.h>
 #include <json/value.h>
+#include <charconv>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -255,22 +256,19 @@ static const std::string_view certificateRequiredTemplate = R"zz(
 
 static std::optional<int> try_stoi(const std::string_view sv)
 {
-    try
-    {
-        return std::stoi(sv.data());
-    }
-    catch (const std::exception &e)
-    {
-        return std::nullopt;
-    }
+    int value = 0;
+    const auto result = std::from_chars(sv.data(), sv.data() + sv.size(), value);
+    if (result.ec == std::errc{} && result.ptr == sv.data() + sv.size())
+        return value;
+    return std::nullopt;
 }
 
 void GeminiServerPlugin::initAndStart(const Json::Value& config)
 {
     int numThread = config.get("numThread", 1).asInt();
-    if(numThread < 0)
+    if(numThread <= 0)
     {
-        LOG_FATAL << "numThread must be latger or equal to 1";
+        LOG_FATAL << "numThread must be greater than or equal to 1";
         exit(1);
     }
 
@@ -380,7 +378,7 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
             }
             else if(resp->getHeader("gemini-status") != "" && try_stoi(resp->getHeader("gemini-status")).value_or(-1)/10 == 1)
             {
-                bool sensitive_input = req->getHeader("gemini-status") == "11";
+                bool sensitive_input = resp->getHeader("gemini-status") == "11";
                 std::string html = std::string(userInputTemplate);
                 std::string title = HttpViewData::htmlTranslate(resp->getHeader("meta"));
                 // HACK: Should use a more effectent way to compile HTML

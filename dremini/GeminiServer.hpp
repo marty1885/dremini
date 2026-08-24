@@ -3,6 +3,8 @@
 #include <dremini/Titan.hpp>
 #include <drogon/HttpRequest.h>
 #include <drogon/utils/FunctionTraits.h>
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/EventLoopThreadPool.h>
@@ -43,7 +45,7 @@ protected:
     trantor::EventLoop* loop_;
     trantor::TcpServer server_;
     TitanOptions titanOptions_;
-    std::atomic<int> roundRobbinIdx_{0};
+    std::atomic_uint32_t roundRobbinIdx_{0};
 };
 
 }

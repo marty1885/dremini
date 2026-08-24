@@ -47,7 +47,16 @@ DROGON_TEST(GeminiRendererExtended)
     CHECK(render2Html("~~**123**~~", true).first == "<p><strike><strong>123</strong></strike></p>\n");
     CHECK(render2Html("~~**~~", true).first == "<p><strike>**</strike></p>\n");
     CHECK(render2Html("**~~**", true).first == "<p><strong>~~</strong></p>\n");
+    CHECK_NOTHROW(render2Html("~~**unclosed bold~~", true));
 
+}
+
+DROGON_TEST(GeminiRendererMarkdownEmptyPreformattedText)
+{
+    const std::vector<GeminiASTNode> ast{
+        {"", "intro", "text", ""},
+        {"", "", "preformatted_text", "markdown"}};
+    CHECK(render2Markdown(ast) == "intro\n```markdown\n\n```\n");
 }
 
 DROGON_TEST(GeminiRendererEscapesLinkTargets)

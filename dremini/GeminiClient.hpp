@@ -43,7 +43,7 @@ namespace internal
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0, intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900,
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900,
                  ServerTrust trust = kNoVerification);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
@@ -99,7 +99,7 @@ protected:
 
 }
 
-void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
+void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 10
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
     , double maxTransferDuration=0, ServerTrust trust = kNoVerification);
 

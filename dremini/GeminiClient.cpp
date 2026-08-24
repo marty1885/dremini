@@ -10,6 +10,7 @@
 #include <random>
 #include <list>
 #include <atomic>
+#include <charconv>
 
 using namespace drogon;
 
@@ -57,17 +58,11 @@ static ContentType parseContentType(const std::string_view &contentType)
 
 static std::optional<int> try_stoi(const std::string_view sv)
 {
-    try
-    {
-        size_t pos = 0;
-        return std::stoi(sv.data(), &pos);
-        if(pos != sv.size())
-            return std::nullopt;
-    }
-    catch (const std::exception &e)
-    {
-        return std::nullopt;
-    }
+    int value = 0;
+    const auto result = std::from_chars(sv.data(), sv.data() + sv.size(), value);
+    if (result.ec == std::errc{} && result.ptr == sv.data() + sv.size())
+        return value;
+    return std::nullopt;
 }
 
 namespace dremini
@@ -372,7 +367,6 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
                 resoneseMeta_ = std::string(meta.begin()+idx, meta.end());
             else
                 resoneseMeta_ = "";
-            resoneseMeta_ = meta;
         }
         if(!downloadMimes_.empty() && responseStatus_ / 10 == 2)
         {
@@ -387,7 +381,7 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
         msg->read(std::distance(msg->peek(), crlf)+2);
     }
 
-    if(maxBodySize_ < 0 || msg->readableBytes() > maxBodySize_)
+    if(maxBodySize_ >= 0 && msg->readableBytes() > static_cast<size_t>(maxBodySize_))
     {
         haveResult(ReqResult::Ok, msg);
         connPtr->shutdown();

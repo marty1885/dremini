@@ -1,5 +1,6 @@
 #include "GeminiParser.hpp"
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <sstream>
 
@@ -27,7 +28,7 @@ namespace dremini
 static std::string_view ltrim(std::string_view s)
 {
     s.remove_prefix(std::distance(s.cbegin(), std::find_if(s.cbegin(), s.cend(),
-         [](int c) {return !std::isspace(c);})));
+         [](unsigned char c) {return !std::isspace(c);})));
 
     return s;
 }
@@ -35,7 +36,7 @@ static std::string_view ltrim(std::string_view s)
 static std::string_view rtrim(std::string_view s)
 {
     s.remove_suffix(std::distance(s.crbegin(), std::find_if(s.crbegin(), s.crend(),
-        [](int c) {return !std::isspace(c);})));
+        [](unsigned char c) {return !std::isspace(c);})));
 
     return s;
 }

@@ -1,6 +1,7 @@
 #include <dremini/GeminiServer.hpp>
 #include <drogon/HttpAppFramework.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -15,6 +16,7 @@ using namespace trantor;
 namespace
 {
 constexpr std::size_t kMaxRequestLineBytes = 1024;
+constexpr std::size_t kMaxResponseHeaderBytes = 1024;
 
 struct ParsedRequestLine
 {
@@ -42,6 +44,17 @@ bool containsUriControl(std::string_view value) noexcept
         if (byte <= 0x20 || byte == 0x7f) return true;
     }
     return false;
+}
+
+std::string makeResponseHeader(int status, std::string meta)
+{
+    meta.erase(std::remove_if(meta.begin(), meta.end(), [](char character) {
+        return character == '\r' || character == '\n';
+    }), meta.end());
+    // Gemini limits the complete status line, including its CRLF terminator,
+    // to 1024 bytes. Status is always two digits followed by one space.
+    meta.resize(std::min(meta.size(), kMaxResponseHeaderBytes - 5));
+    return std::to_string(status) + " " + meta + "\r\n";
 }
 
 // Gemini request lines carry one absolute URI. Keep this parser deliberately
@@ -291,13 +304,14 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 void GeminiServer::dispatchRequest(const TcpConnectionPtr &conn, HttpRequestPtr req)
 {
     conn->setContext(std::make_shared<ConnectionState>(ConnectionState::Phase::Dispatched));
-    int idx = roundRobbinIdx_.fetch_add(1, std::memory_order_relaxed);
-    if(idx > 0x7ffff) // random large number
+    const auto threadNum = app().getThreadNum();
+    if (threadNum == 0)
     {
-        // XXX: Properbally data race. But it happens rare enough
-        roundRobbinIdx_.store(0, std::memory_order_relaxed);
+        LOG_ERROR << "GeminiServer requires at least one application I/O thread";
+        rejectRequest(conn, 40, "Temporary Failure");
+        return;
     }
-    idx = idx % app().getThreadNum();
+    const auto idx = roundRobbinIdx_.fetch_add(1, std::memory_order_relaxed) % threadNum;
     // Drogon only accepts request from it's own event loops
     app().getIOLoop(idx)->runInLoop([req=std::move(req), conn=std::move(conn), this](){
         app().forward(req, [req=std::move(req), conn=std::move(conn), this](const HttpResponsePtr& resp){
@@ -353,22 +367,22 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
             meta = "Input";
-        respHeader = std::to_string(status) + " " + meta + "\r\n";
+        respHeader = makeResponseHeader(status, std::move(meta));
     }
     else if(status/10 == 2)
     {
         auto ct = resp->contentTypeString();
         if(ct != "")
-            respHeader = std::to_string(status) + " " + ct + "\r\n";
+            respHeader = makeResponseHeader(status, std::move(ct));
         else
-            respHeader = std::to_string(status) + " application/octet-stream\r\n";
+            respHeader = makeResponseHeader(status, "application/octet-stream");
     }
     else if(status/10 == 3)
     {
-        if(!resp->getHeader("location").empty())
-            respHeader = std::to_string(status) + " " + resp->getHeader("location") + "\r\n";
-        else
-            respHeader = std::to_string(status) + " " + resp->getHeader("meta") + "\r\n";
+        std::string meta = resp->getHeader("location");
+        if(meta.empty())
+            meta = resp->getHeader("meta");
+        respHeader = makeResponseHeader(status, std::move(meta));
     }
     else if(status == 44)
     {
@@ -377,25 +391,25 @@ void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResp
             meta = resp->getHeader("meta");
         if(meta.empty())
             meta = "30"; // XXX: Default 30s retry
-        respHeader = std::to_string(status) + " " + meta + "\r\n";
+        respHeader = makeResponseHeader(status, std::move(meta));
     }
     else if(status/10 == 4)
     {
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
             meta = "Temporary Failure";
-        respHeader = std::to_string(status) + " " + meta + "\r\n";
+        respHeader = makeResponseHeader(status, std::move(meta));
     }
     else if(status/10 == 5)
     {
         std::string meta = resp->getHeader("meta");
         if(meta.empty())
             meta = "Permanent Failure";
-        respHeader = std::to_string(status) + " " + meta + "\r\n";
+        respHeader = makeResponseHeader(status, std::move(meta));
     }
     else
     {
-        respHeader = std::to_string(status) + " " + resp->getHeader("meta") + "\r\n";
+        respHeader = makeResponseHeader(status, resp->getHeader("meta"));
     }
     conn->send(respHeader);
 
