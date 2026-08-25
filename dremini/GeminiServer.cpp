@@ -141,7 +141,7 @@ GeminiServer::GeminiServer(EventLoop* loop,
     // Gemini permits both anonymous clients and clients authenticating with a
     // self-signed certificate. Request a certificate without requiring one;
     // application routes decide whether a certificate is necessary.
-    tlsPolicy->setPeerCertificateRequest(true)
+    tlsPolicy->setPeerCertificateRequest(false)
         .setCertificateVerification(false);
     server_.enableSSL(std::move(tlsPolicy));
     server_.setConnectionCallback([this](const TcpConnectionPtr& conn) {onConnection(conn);});
