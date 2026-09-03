@@ -323,8 +323,6 @@ void GeminiClient::sendRequestInLoop()
 void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg)
 {
-    if(timeout_ > 0)
-        loop_->invalidateTimer(timeoutTimerId_);
     LOG_TRACE << "Got data from Gemini server";
 
     if(!headerReceived_)
@@ -366,6 +364,11 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             else
                 resoneseMeta_ = "";
         }
+        // The response timeout covers receipt of a complete, valid Gemini
+        // header. A peer sending only part of a header must not be able to
+        // disable it by delivering a single byte.
+        if(timeout_ > 0)
+            loop_->invalidateTimer(timeoutTimerId_);
         if(!downloadMimes_.empty() && responseStatus_ / 10 == 2)
         {
             std::string mime = resoneseMeta_.substr(0, resoneseMeta_.find_first_of("; ,"));
