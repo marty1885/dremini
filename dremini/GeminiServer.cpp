@@ -17,6 +17,7 @@ namespace
 {
 constexpr std::size_t kMaxRequestLineBytes = 1024;
 constexpr std::size_t kMaxResponseHeaderBytes = 1024;
+constexpr std::size_t kRequestDeadlineSeconds = 60;
 
 struct ParsedRequestLine
 {
@@ -117,6 +118,7 @@ struct ConnectionState
     explicit ConnectionState(Phase phase) : phase(phase) {}
 
     Phase phase;
+    std::atomic_bool responseClaimed{false};
     HttpRequestPtr request;
     std::size_t expectedBodyBytes = 0;
     std::string body;
@@ -149,7 +151,25 @@ GeminiServer::GeminiServer(EventLoop* loop,
 }
 
 void GeminiServer::onConnection(const TcpConnectionPtr& conn)
-{}
+{
+    if (!conn->connected()) return;
+    const std::weak_ptr<TcpConnection> weak = conn;
+    conn->getLoop()->runAfter(kRequestDeadlineSeconds, [weak] {
+        const auto connection = weak.lock();
+        if (!connection || !connection->connected()) return;
+        if (const auto state = connection->getContext<ConnectionState>())
+        {
+            // sendClaimedResponseBack() has already queued the complete
+            // response and initiated an orderly TLS shutdown. Do not turn a
+            // slow reader into a truncated, ambiguous Gemini response.
+            bool unclaimed = false;
+            if (!state->responseClaimed.compare_exchange_strong(
+                    unclaimed, true, std::memory_order_acq_rel))
+                return;
+        }
+        connection->forceClose();
+    });
+}
 
 void GeminiServer::start()
 {
@@ -168,6 +188,18 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         if (state->phase == ConnectionState::Phase::Dispatched)
         {
             LOG_WARN << "Extra message received for Gemini/Titan connection";
+            buf->retrieveAll();
+            // The network and application callbacks run on different loops.
+            // Whichever side claims the response first owns the connection.
+            // If application output has started, drain the invalid input while
+            // its complete response finishes its orderly TLS shutdown. If it
+            // has not started, replace it with one complete protocol error.
+            if (state->responseClaimed.exchange(true, std::memory_order_acq_rel))
+                return;
+            auto response = HttpResponse::newHttpResponse();
+            response->setStatusCode(static_cast<HttpStatusCode>(59));
+            response->addHeader("meta", "Trailing data after request");
+            sendClaimedResponseBack(conn, response);
             return;
         }
 
@@ -336,6 +368,14 @@ void GeminiServer::setIoLoopThreadPool(const std::shared_ptr<EventLoopThreadPool
 }
 
 void GeminiServer::sendResponseBack(const TcpConnectionPtr& conn, const HttpResponsePtr& resp)
+{
+    const auto state = conn->getContext<ConnectionState>();
+    if (!state || state->responseClaimed.exchange(true, std::memory_order_acq_rel))
+        return;
+    sendClaimedResponseBack(conn, resp);
+}
+
+void GeminiServer::sendClaimedResponseBack(const TcpConnectionPtr& conn, const HttpResponsePtr& resp)
 {
     LOG_TRACE << "Sending response back";
     const int httpStatus = resp->statusCode();

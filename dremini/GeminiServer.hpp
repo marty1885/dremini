@@ -35,6 +35,8 @@ public:
 
 protected:
     void sendResponseBack(const trantor::TcpConnectionPtr& conn, const drogon::HttpResponsePtr& resp);
+    void sendClaimedResponseBack(const trantor::TcpConnectionPtr& conn,
+                                 const drogon::HttpResponsePtr& resp);
     void onConnection(const trantor::TcpConnectionPtr &conn);
     void onMessage(const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf);
     void dispatchRequest(const trantor::TcpConnectionPtr &conn,
