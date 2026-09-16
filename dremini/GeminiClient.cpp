@@ -69,13 +69,14 @@ namespace internal {
 
 GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
                            intmax_t maxBodySize, double maxTransferDuration, ServerTrust trust,
-                           PeerAddressPolicy peerAddressPolicy)
+                           PeerAddressPolicy peerAddressPolicy, bool requirePkix)
     : loop_(loop),
       timeout_(timeout),
       maxBodySize_(maxBodySize),
       maxTransferDuration_(maxTransferDuration),
       trust_(std::move(trust)),
-      peerAddressPolicy_(std::move(peerAddressPolicy)) {
+      peerAddressPolicy_(std::move(peerAddressPolicy)),
+      requirePkix_(requirePkix) {
     static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
     std::smatch match;
     if (!std::regex_match(url, match, re))
@@ -292,9 +293,13 @@ void GeminiClient::sendRequestInLoop() {
     auto weakPtr = weak_from_this();
     client_ = std::make_shared<trantor::TcpClient>(loop_, peerAddress_, "GeminiClient");
     auto tlsPolicy = trantor::TLSPolicy::defaultClientPolicy(host_);
-    // No CA or TOFU policy: accept the TLS handshake, then check only that the
-    // presented leaf certificate names the requested host.
-    tlsPolicy->setValidate(false).setUseSystemCertStore(false);
+    // TOFU callers retain the historic post-handshake trust callback. PKIX
+    // callers use the platform store and fail the handshake before that
+    // callback if the chain, date, or hostname is invalid.
+    if (requirePkix_)
+        tlsPolicy->setValidate(true).setUseSystemCertStore(true);
+    else
+        tlsPolicy->setValidate(false).setUseSystemCertStore(false);
     client_->enableSSL(std::move(tlsPolicy));
     client_->setMessageCallback(
         [weakPtr](const trantor::TcpConnectionPtr& connPtr, trantor::MsgBuffer* msg) {
@@ -482,10 +487,10 @@ static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout,
                  trantor::EventLoop* loop, intmax_t maxBodySize,
                  const std::vector<std::string>& mimes, double maxTransferDuration,
-                 ServerTrust trust, PeerAddressPolicy peerAddressPolicy) {
+                 ServerTrust trust, PeerAddressPolicy peerAddressPolicy, bool requirePkix) {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(
         url, loop, timeout, maxBodySize, maxTransferDuration, std::move(trust),
-        std::move(peerAddressPolicy));
+        std::move(peerAddressPolicy), requirePkix);
     decltype(holder)::iterator it;
     {
         std::lock_guard<std::mutex> lock(holderMutex);

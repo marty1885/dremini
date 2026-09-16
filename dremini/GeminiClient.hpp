@@ -48,7 +48,8 @@ public:
     GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0,
                  intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900,
                  ServerTrust trust = kNoVerification,
-                 PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress);
+                 PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress,
+                 bool requirePkix = false);
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
@@ -115,6 +116,7 @@ protected:
     ServerTrust trust_;
     PeerAddressPolicy peerAddressPolicy_;
     bool trustStarted_ = false;
+    bool requirePkix_ = false;
 };
 
 }
@@ -122,7 +124,7 @@ protected:
 void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
     , double maxTransferDuration=0, ServerTrust trust = kNoVerification
-    , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress);
+    , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress, bool requirePkix = false);
 
 #ifdef __cpp_impl_coroutine
 namespace internal
@@ -132,9 +134,10 @@ struct [[nodiscard]] GeminiRespAwaiter
 {
     GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
         , double maxTransferDuration=0, ServerTrust trust = kNoVerification
-        , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress)
+        , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress, bool requirePkix = false)
         : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes), maxTransferDuration_(maxTransferDuration),
-          trust_(std::move(trust)), peerAddressPolicy_(std::move(peerAddressPolicy))
+          trust_(std::move(trust)), peerAddressPolicy_(std::move(peerAddressPolicy)),
+          requirePkix_(requirePkix)
     {
     }
 
@@ -178,7 +181,7 @@ struct [[nodiscard]] GeminiRespAwaiter
             }
             state->handle.resume();
         }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_, std::move(trust_),
-           std::move(peerAddressPolicy_));
+           std::move(peerAddressPolicy_), requirePkix_);
     }
 
     drogon::HttpResponsePtr await_resume()
@@ -204,6 +207,7 @@ private:
     double maxTransferDuration_;
     ServerTrust trust_;
     PeerAddressPolicy peerAddressPolicy_;
+    bool requirePkix_;
     std::shared_ptr<State> state_ = std::make_shared<State>();
 };
 }
@@ -211,10 +215,10 @@ private:
 inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
     , double maxTransferDuration = 0, ServerTrust trust = kNoVerification
-    , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress)
+    , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress, bool requirePkix = false)
 {
     return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes, maxTransferDuration,
-                                      std::move(trust), std::move(peerAddressPolicy));
+                                      std::move(trust), std::move(peerAddressPolicy), requirePkix);
 }
 
 #endif
