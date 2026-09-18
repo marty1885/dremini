@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <trantor/net/TLSPolicy.h>
@@ -122,17 +123,63 @@ struct ConnectionState
     HttpRequestPtr request;
     std::size_t expectedBodyBytes = 0;
     std::string body;
+    std::shared_ptr<ConnectionPermit> permit;
 };
 
+std::shared_ptr<ConnectionState> replaceConnectionState(
+    const TcpConnectionPtr &connection, ConnectionState::Phase phase)
+{
+    auto state = std::make_shared<ConnectionState>(phase);
+    if (const auto previous = connection->getContext<ConnectionState>())
+        state->permit = std::move(previous->permit);
+    connection->setContext(state);
+    return state;
+}
+
 }  // namespace
+
+ConnectionLimiter::ConnectionLimiter(const std::size_t maximum) : maximum_(maximum)
+{
+    if (maximum_ == 0)
+        throw std::invalid_argument("Gemini server connection limit must be positive");
+}
+
+bool ConnectionLimiter::tryAcquire() noexcept
+{
+    auto current = active_.load(std::memory_order_relaxed);
+    while (current < maximum_)
+        if (active_.compare_exchange_weak(current, current + 1,
+                                          std::memory_order_acquire,
+                                          std::memory_order_relaxed))
+            return true;
+    return false;
+}
+
+void ConnectionLimiter::release() noexcept
+{
+    active_.fetch_sub(1, std::memory_order_release);
+}
+
+ConnectionPermit::ConnectionPermit(std::shared_ptr<ConnectionLimiter> limiter) noexcept
+    : limiter_(std::move(limiter)) {}
+
+ConnectionPermit::~ConnectionPermit()
+{
+    if (limiter_)
+        limiter_->release();
+}
 
 GeminiServer::GeminiServer(EventLoop* loop,
                            const InetAddress& listenAddr,
                            const std::string& key,
                            const std::string& cert,
-                           TitanOptions titanOptions)
-    : loop_(loop), server_(loop, listenAddr, "GeminiServer"), titanOptions_(titanOptions)
+                           TitanOptions titanOptions,
+                           std::shared_ptr<ConnectionLimiter> connectionLimiter)
+    : loop_(loop), server_(loop, listenAddr, "GeminiServer"), titanOptions_(titanOptions),
+      connectionLimiter_(std::move(connectionLimiter))
 {
+    if (!connectionLimiter_)
+        connectionLimiter_ = std::make_shared<ConnectionLimiter>(256);
     if(app().supportSSL() == false)
     {
         LOG_FATAL << "Dremini (Drogon Gemini Server) requires SSL support";
@@ -152,7 +199,20 @@ GeminiServer::GeminiServer(EventLoop* loop,
 
 void GeminiServer::onConnection(const TcpConnectionPtr& conn)
 {
-    if (!conn->connected()) return;
+    if (!conn->connected())
+    {
+        if (const auto state = conn->getContext<ConnectionState>())
+            state->permit.reset();
+        return;
+    }
+    if (!connectionLimiter_->tryAcquire())
+    {
+        conn->forceClose();
+        return;
+    }
+    auto state = std::make_shared<ConnectionState>(ConnectionState::Phase::CollectingTitanBody);
+    state->permit = std::make_shared<ConnectionPermit>(connectionLimiter_);
+    conn->setContext(std::move(state));
     const std::weak_ptr<TcpConnection> weak = conn;
     conn->getLoop()->runAfter(kRequestDeadlineSeconds, [weak] {
         const auto connection = weak.lock();
@@ -183,26 +243,28 @@ void GeminiServer::setIoThreadNum(size_t n)
 
 void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 {
-    if (const auto state = conn->getContext<ConnectionState>())
+    if (const auto state = conn->getContext<ConnectionState>(); state &&
+        state->phase == ConnectionState::Phase::Dispatched)
     {
-        if (state->phase == ConnectionState::Phase::Dispatched)
-        {
-            LOG_WARN << "Extra message received for Gemini/Titan connection";
-            buf->retrieveAll();
-            // The network and application callbacks run on different loops.
-            // Whichever side claims the response first owns the connection.
-            // If application output has started, drain the invalid input while
-            // its complete response finishes its orderly TLS shutdown. If it
-            // has not started, replace it with one complete protocol error.
-            if (state->responseClaimed.exchange(true, std::memory_order_acq_rel))
-                return;
-            auto response = HttpResponse::newHttpResponse();
-            response->setStatusCode(static_cast<HttpStatusCode>(59));
-            response->addHeader("meta", "Trailing data after request");
-            sendClaimedResponseBack(conn, response);
+        LOG_WARN << "Extra message received for Gemini/Titan connection";
+        buf->retrieveAll();
+        // The network and application callbacks run on different loops.
+        // Whichever side claims the response first owns the connection.
+        // If application output has started, drain the invalid input while
+        // its complete response finishes its orderly TLS shutdown. If it
+        // has not started, replace it with one complete protocol error.
+        if (state->responseClaimed.exchange(true, std::memory_order_acq_rel))
             return;
-        }
+        auto response = HttpResponse::newHttpResponse();
+        response->setStatusCode(static_cast<HttpStatusCode>(59));
+        response->addHeader("meta", "Trailing data after request");
+        sendClaimedResponseBack(conn, response);
+        return;
+    }
 
+    if (const auto state = conn->getContext<ConnectionState>(); state &&
+        state->phase == ConnectionState::Phase::CollectingTitanBody && state->request)
+    {
         const auto remaining = state->expectedBodyBytes - state->body.size();
         if (buf->readableBytes() > remaining)
         {
@@ -308,13 +370,12 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         if (titan.request->token)
             req->addHeader("titan-token", *titan.request->token);
 
-        auto state = std::make_shared<ConnectionState>(ConnectionState::Phase::CollectingTitanBody);
+        auto state = replaceConnectionState(conn, ConnectionState::Phase::CollectingTitanBody);
         state->request = std::move(req);
         state->expectedBodyBytes = titan.request->size;
         // The declared size is peer-controlled. Do not reserve it: memory is
         // acquired only for bytes actually received, under the server-owned
         // maximum enforced by parseTitanRequest().
-        conn->setContext(std::move(state));
         onMessage(conn, buf);
         return;
     }
@@ -335,7 +396,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 
 void GeminiServer::dispatchRequest(const TcpConnectionPtr &conn, HttpRequestPtr req)
 {
-    conn->setContext(std::make_shared<ConnectionState>(ConnectionState::Phase::Dispatched));
+    replaceConnectionState(conn, ConnectionState::Phase::Dispatched);
     const auto threadNum = app().getThreadNum();
     if (threadNum == 0)
     {
@@ -354,7 +415,7 @@ void GeminiServer::dispatchRequest(const TcpConnectionPtr &conn, HttpRequestPtr 
 
 void GeminiServer::rejectRequest(const TcpConnectionPtr &conn, int status, std::string meta)
 {
-    conn->setContext(std::make_shared<ConnectionState>(ConnectionState::Phase::Dispatched));
+    replaceConnectionState(conn, ConnectionState::Phase::Dispatched);
     auto response = HttpResponse::newHttpResponse();
     response->setStatusCode(static_cast<HttpStatusCode>(status));
     response->addHeader("meta", std::move(meta));

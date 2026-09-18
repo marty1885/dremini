@@ -273,6 +273,14 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
     }
 
     pool_ = std::make_shared<trantor::EventLoopThreadPool>(numThread, "GeminiServerThreadPool");
+    const auto maximumConnections = config.get("max_connections", 256).asInt64();
+    if (maximumConnections < 1 || static_cast<std::uint64_t>(maximumConnections) > 4096)
+    {
+        LOG_FATAL << "Gemini max_connections must be between 1 and 4096";
+        exit(1);
+    }
+    auto connectionLimiter = std::make_shared<ConnectionLimiter>(
+        static_cast<std::size_t>(maximumConnections));
 
     installTitanRoutingAdvice();
 
@@ -329,7 +337,8 @@ void GeminiServerPlugin::initAndStart(const Json::Value& config)
                 LOG_FATAL << ip << " is not a valid IP address";
             }
 
-            auto server = std::make_unique<GeminiServer>(app().getLoop(), addr, key, cert, titanOptions);
+            auto server = std::make_unique<GeminiServer>(
+                app().getLoop(), addr, key, cert, titanOptions, connectionLimiter);
             server->setIoLoopThreadPool(pool_);
             server->start();
             servers_.emplace_back(std::move(server));
