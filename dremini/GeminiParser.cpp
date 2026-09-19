@@ -1,7 +1,5 @@
 #include "GeminiParser.hpp"
 #include <algorithm>
-#include <iostream>
-#include <sstream>
 
 static bool startsWith(const std::string_view sv, const std::string_view target)
 {
@@ -40,14 +38,15 @@ static std::string_view rtrim(std::string_view s)
     return s;
 }
 
-static std::string trim(std::string s)
+static std::string_view trim(std::string_view s)
 {
-    return std::string(ltrim(rtrim(s)));
+    return ltrim(rtrim(s));
 }
 
 std::vector<GeminiASTNode> parseGemini(const std::string_view str)
 {
     std::vector<GeminiASTNode> nodes;
+    nodes.reserve(std::count(str.begin(), str.end(), '\n') + (str.empty() ? 0 : 1));
     size_t last_pos = 0;
     bool in_preformatted_text = false;
     size_t preformatted_text_start = 0;
@@ -88,15 +87,15 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.type = "link";
                 }
                 else if(startsWith(line, "###")) {
-                    node.text = trim(std::string(line.substr(3)));
+                    node.text = trim(line.substr(3));
                     node.type = "heading3";
                 }
                 else if(startsWith(line, "##")) {
-                    node.text = trim(std::string(line.substr(2)));
+                    node.text = trim(line.substr(2));
                     node.type = "heading2";
                 }
                 else if(startsWith(line, "#")) {
-                    node.text = trim(std::string(line.substr(1)));
+                    node.text = trim(line.substr(1));
                     node.type = "heading1";
                 }
                 else if(startsWith(line, "* ")) {
@@ -134,17 +133,24 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     GeminiASTNode node;
                     node.orig_text = preformatted_text;
 
-                    std::stringstream ss;
-                    std::string line;
                     std::string content;
-                    ss << preformatted_text;
-                    std::getline(ss, line);
-                    if(line.size() > 3)
-                        node.meta = line.substr(4);
-
-                    while(std::getline(ss, line)) {
-                        if(line.find("```") != 0)
-                            content += line + "\n";
+                    const auto first_newline = preformatted_text.find('\n');
+                    if(first_newline != std::string_view::npos) {
+                        auto content_start = first_newline + 1;
+                        content.reserve(preformatted_text.size() - content_start);
+                        while(content_start < preformatted_text.size()) {
+                            const auto next_newline = preformatted_text.find('\n', content_start);
+                            const auto content_end = next_newline == std::string_view::npos
+                                                          ? preformatted_text.size()
+                                                          : next_newline;
+                            const auto line = preformatted_text.substr(
+                                content_start, content_end - content_start);
+                            if(!line.find("```") == 0)
+                                content.append(line).push_back('\n');
+                            if(next_newline == std::string_view::npos)
+                                break;
+                            content_start = next_newline + 1;
+                        }
                     }
                     node.text = content;
                     node.meta = preformatted_text_meta;

@@ -74,8 +74,10 @@ namespace dremini
 namespace internal
 {
 
-GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize, double maxTransferDuration)
-    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), maxTransferDuration_(maxTransferDuration)
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout, intmax_t maxBodySize,
+                           double maxTransferDuration, trantor::TLSPolicyPtr tlsPolicy)
+    : loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), maxTransferDuration_(maxTransferDuration),
+      tlsPolicy_(std::move(tlsPolicy))
 {
     static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
     std::smatch match;
@@ -107,30 +109,72 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
 }
 
 static thread_local std::shared_ptr<trantor::Resolver> resolver;
+
+const char *GeminiClient::phaseName() const
+{
+    switch (phase_)
+    {
+        case Phase::Resolving:
+            return "dns";
+        case Phase::ConnectingOrTls:
+            return "tcp-or-tls";
+        case Phase::AwaitingHeader:
+            return "gemini-header";
+        case Phase::ReceivingBody:
+            return "gemini-body";
+        case Phase::Complete:
+            return "complete";
+    }
+    return "unknown";
+}
+
 void GeminiClient::fire()
 {
     if(isIPString(host_))
     {
         bool isIpV6 = host_.find(":") != std::string::npos;
-        peerAddress_ = trantor::InetAddress(host_, port_, isIpV6);
+        peerAddresses_.emplace_back(host_, port_, isIpV6);
         if(loop_->isInLoopThread())
-            sendRequestInLoop();
+            connectNextAddressInLoop();
         else
-            loop_->queueInLoop([thisPtr=shared_from_this()] { thisPtr->sendRequestInLoop(); });
+            loop_->queueInLoop([thisPtr=shared_from_this()] { thisPtr->connectNextAddressInLoop(); });
         return;
     }
 
     loop_->runInLoop([thisPtr=shared_from_this()](){
         if(!resolver)
             resolver = trantor::Resolver::newResolver(thisPtr->loop_, 10);
-        resolver->resolve(thisPtr->host_, [thisPtr](const trantor::InetAddress &addr){
-            if(addr.ipNetEndian() == 0)
-            {
-                thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
-                return;
-            }
-            thisPtr->peerAddress_ = trantor::InetAddress(addr.toIp(), thisPtr->port_, addr.isIpV6());
-            thisPtr->sendRequestInLoop();
+        resolver->resolve(thisPtr->host_, [thisPtr](const std::vector<trantor::InetAddress> &addresses){
+            // NormalResolver completes on its blocking DNS worker pool, while
+            // AresResolver completes on the EventLoop.  GeminiClient state,
+            // timers, and TcpClient must only be touched by the owning loop.
+            // Always enqueue so both resolver implementations have identical
+            // callback affinity.
+            thisPtr->loop_->queueInLoop([thisPtr, addresses]() {
+                for (const auto &addr : addresses)
+                {
+                    const auto ip = addr.toIp();
+                    // Resolver failure sentinels constructed from sockaddr
+                    // carry a valid-family flag, so isUnspecified() alone is
+                    // insufficient.
+                    if (!addr.isUnspecified() && ip != "0.0.0.0" && ip != "::")
+                        thisPtr->peerAddresses_.emplace_back(
+                            ip, thisPtr->port_, addr.isIpV6());
+                }
+                if (thisPtr->peerAddresses_.empty())
+                {
+                    thisPtr->haveResult(ReqResult::BadServerAddress, nullptr);
+                    return;
+                }
+                // Prefer IPv4 on machines whose IPv6 route may be absent or
+                // incomplete, while retaining every result as a fallback.
+                std::stable_sort(thisPtr->peerAddresses_.begin(),
+                                  thisPtr->peerAddresses_.end(),
+                                  [](const auto &a, const auto &b) {
+                                      return !a.isIpV6() && b.isIpV6();
+                                  });
+                thisPtr->connectNextAddressInLoop();
+            });
         });
     });
 }
@@ -142,10 +186,17 @@ void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer
         return;
     callbackCalled_ = true;
 
-    if(timeout_ > 0)
+    phase_ = Phase::Complete;
+    if(requestTimerActive_)
+    {
         loop_->invalidateTimer(timeoutTimerId_);
-    if(maxTransferDuration_ > 0)
+        requestTimerActive_ = false;
+    }
+    if(transferTimerActive_)
+    {
         loop_->invalidateTimer(transferTimerId_);
+        transferTimerActive_ = false;
+    }
     if(result != ReqResult::Ok)
     {
         client_ = nullptr;
@@ -161,6 +212,12 @@ void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer
 
     // check ok. now we can get the body
     auto resp = HttpResponse::newHttpResponse();
+    if (client_) {
+        if (const auto connection = client_->connection()) {
+            if (const auto certificate = connection->peerCertificate())
+                resp->addHeader("gemini-certificate-sha256", certificate->sha256Fingerprint());
+        }
+    }
     resp->setBody(std::string(msg->peek(), msg->peek()+msg->readableBytes()));
     resp->addHeader("meta", resoneseMeta_);
     resp->addHeader("gemini-status", std::to_string(responseStatus_));
@@ -198,12 +255,58 @@ void GeminiClient::haveResult(drogon::ReqResult result, const trantor::MsgBuffer
     callback_(ReqResult::Ok, resp);
 }
 
+void GeminiClient::connectNextAddressInLoop()
+{
+    loop_->assertInLoopThread();
+    if (callbackCalled_)
+        return;
+    if (nextPeerAddress_ >= peerAddresses_.size())
+    {
+        haveResult(ReqResult::NetworkFailure, nullptr);
+        return;
+    }
+
+    peerAddress_ = peerAddresses_[nextPeerAddress_++];
+    phase_ = Phase::ConnectingOrTls;
+    if (!requestTimerActive_ && timeout_ > 0)
+    {
+        auto weakPtr = weak_from_this();
+        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
+            auto thisPtr = weakPtr.lock();
+            if(!thisPtr)
+                return;
+            const char *stage = thisPtr->phaseName();
+            trantor::TcpConnectionPtr connection;
+            if (thisPtr->client_)
+                connection = thisPtr->client_->connection();
+            if (thisPtr->phase_ == Phase::ConnectingOrTls)
+                stage = connection ? "tls-handshake" : "tcp-connect";
+            LOG_WARN << "Gemini request timeout: host=" << thisPtr->host_
+                     << " peer=" << thisPtr->peerAddress_.toIpPort()
+                     << " phase=" << stage
+                     << " socket=" << (connection ? "yes" : "no")
+                     << " raw_rx=" << (connection ? connection->bytesReceived() : 0)
+                     << " raw_tx=" << (connection ? connection->bytesSent() : 0)
+                     << " plaintext_buffered="
+                     << (connection ? connection->getRecvBuffer()->readableBytes() : 0);
+            thisPtr->haveResult(ReqResult::Timeout, nullptr);
+        });
+        requestTimerActive_ = true;
+    }
+    sendRequestInLoop();
+}
+
 void GeminiClient::sendRequestInLoop()
 {
     // TODO: Validate certificate
     auto weakPtr = weak_from_this();
     client_ = std::make_shared<trantor::TcpClient>(loop_, peerAddress_, "GeminiClient");
-    client_->enableSSL(false, false, host_);
+    auto tlsPolicy = tlsPolicy_ ? std::make_shared<trantor::TLSPolicy>(*tlsPolicy_)
+                               : trantor::TLSPolicy::defaultClientPolicy();
+    tlsPolicy->setHostname(host_);
+    if(!tlsPolicy_)
+        tlsPolicy->setValidate(false);
+    client_->enableSSL(std::move(tlsPolicy));
     client_->setMessageCallback([weakPtr](const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg) {
         auto thisPtr = weakPtr.lock();
@@ -212,7 +315,7 @@ void GeminiClient::sendRequestInLoop()
             thisPtr->onRecvMessage(connPtr, msg);
         }
     });
-    client_->setConnectionCallback([weakPtr, this](const trantor::TcpConnectionPtr &connPtr) {
+    client_->setConnectionCallback([weakPtr](const trantor::TcpConnectionPtr &connPtr) {
         auto thisPtr = weakPtr.lock();
         if(!thisPtr)
             return;
@@ -220,22 +323,19 @@ void GeminiClient::sendRequestInLoop()
 
         if(connPtr->connected())
         {
-            LOG_TRACE << "Connected to server. Sending request. URL is: " << url_; 
-            connPtr->send(url_ + "\r\n");
+            thisPtr->phase_ = Phase::AwaitingHeader;
+            LOG_TRACE << "Connected to server. Sending request. URL is: " << thisPtr->url_;
+            connPtr->send(thisPtr->url_ + "\r\n");
         }
         else
         {
-            haveResult(ReqResult::Ok, connPtr->getRecvBuffer());
+            thisPtr->haveResult(ReqResult::Ok, connPtr->getRecvBuffer());
         }
     });
     client_->setSSLErrorCallback([weakPtr](trantor::SSLError err) {
         auto thisPtr = weakPtr.lock();
         if (!thisPtr)
             return;
-        if(thisPtr->timeout_ > 0)
-            thisPtr->loop_->invalidateTimer(thisPtr->timeoutTimerId_);
-        if(thisPtr->maxTransferDuration_ > 0)
-            thisPtr->loop_->invalidateTimer(thisPtr->transferTimerId_);
         if (err == trantor::SSLError::kSSLHandshakeError)
             thisPtr->haveResult(ReqResult::HandshakeError, nullptr);
         else if (err == trantor::SSLError::kSSLInvalidCertificate)
@@ -253,36 +353,26 @@ void GeminiClient::sendRequestInLoop()
         auto thisPtr = weakPtr.lock();
         if (!thisPtr)
             return;
-        // can't connect to server
+        LOG_WARN << "Gemini TCP connection failed: host=" << thisPtr->host_
+                 << " peer=" << thisPtr->peerAddress_.toIpPort();
+        if (thisPtr->nextPeerAddress_ < thisPtr->peerAddresses_.size())
+        {
+            // Connector invokes this callback from inside the current
+            // TcpClient. Replace that client only after its callback unwinds.
+            thisPtr->loop_->queueInLoop([thisPtr]() {
+                thisPtr->client_.reset();
+                thisPtr->connectNextAddressInLoop();
+            });
+            return;
+        }
         thisPtr->haveResult(ReqResult::NetworkFailure, nullptr);
     });
-
-    if(timeout_ > 0)
-    {
-        timeoutTimerId_ = loop_->runAfter(timeout_, [weakPtr](){
-            auto thisPtr = weakPtr.lock();
-            if(!thisPtr)
-                return;
-            thisPtr->haveResult(ReqResult::Timeout, nullptr);
-        });
-    }
-    if(maxTransferDuration_ > 0)
-    {
-        transferTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr](){
-            auto thisPtr = weakPtr.lock();
-            if(!thisPtr)
-                return;
-            thisPtr->haveResult(ReqResult::Timeout, nullptr);
-        });
-    }
     client_->connect();
 }
 
 void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg)
 {
-    if(timeout_ > 0)
-        loop_->invalidateTimer(timeoutTimerId_);
     LOG_TRACE << "Got data from Gemini server";
 
     if(!headerReceived_)
@@ -297,6 +387,27 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
             return;
         }
         headerReceived_ = true;
+
+        if(requestTimerActive_)
+        {
+            loop_->invalidateTimer(timeoutTimerId_);
+            requestTimerActive_ = false;
+        }
+        phase_ = Phase::ReceivingBody;
+        if(maxTransferDuration_ > 0 && !transferTimerActive_)
+        {
+            auto weakPtr = weak_from_this();
+            transferTimerId_ = loop_->runAfter(maxTransferDuration_, [weakPtr](){
+                auto thisPtr = weakPtr.lock();
+                if(!thisPtr)
+                    return;
+                LOG_WARN << "Gemini transfer timeout: host=" << thisPtr->host_
+                         << " peer=" << thisPtr->peerAddress_.toIpPort()
+                         << " phase=" << thisPtr->phaseName();
+                thisPtr->haveResult(ReqResult::Timeout, nullptr);
+            });
+            transferTimerActive_ = true;
+        }
 
         const std::string_view header(msg->peek(), std::distance(msg->peek(), crlf));
         LOG_TRACE << "Gemini header is: " << header;
@@ -353,9 +464,10 @@ static std::list<std::shared_ptr<internal::GeminiClient>> holder;
 static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout
     , trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes
-    , double maxTransferDuration)
+    , double maxTransferDuration, trantor::TLSPolicyPtr tlsPolicy)
 {
-    auto client = std::make_shared<::dremini::internal::GeminiClient>(url, loop, timeout, maxBodySize, maxTransferDuration);
+    auto client = std::make_shared<::dremini::internal::GeminiClient>(
+        url, loop, timeout, maxBodySize, maxTransferDuration, std::move(tlsPolicy));
     decltype(holder)::iterator it;
     {
         std::lock_guard<std::mutex> lock(holderMutex);
