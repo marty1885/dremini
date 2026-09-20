@@ -102,6 +102,33 @@ DROGON_TEST(GeminiParserHandlesUnclosedPreformattedText)
     CHECK(render2Html(nodes, true).first.find("class=\"language-cpp\"") != std::string::npos);
 }
 
+DROGON_TEST(GeminiParserExcludesClosingPreformattedFence)
+{
+    for(const auto input : {"```lang\nbody\n```\n", "```lang\r\nbody\r\n```\r\n"})
+    {
+        const auto nodes = parseGemini(input);
+        REQUIRE(nodes.size() == 1);
+        CHECK(nodes[0].type == "preformatted_text");
+        CHECK(nodes[0].meta == "lang");
+        CHECK(nodes[0].text.find("```") == std::string::npos);
+    }
+}
+
+DROGON_TEST(GeminiTlsPolicyCarriesPkixChoice)
+{
+    const auto opportunistic = geminiTlsPolicy(false);
+    CHECK(!opportunistic->getValidate());
+    CHECK(!opportunistic->getUseSystemCertStore());
+
+    const auto pkix = geminiTlsPolicy(true);
+    CHECK(pkix->getValidate());
+    CHECK(pkix->getUseSystemCertStore());
+
+    const auto clientCert = withClientCert("certificate.pem", "private-key.pem", true);
+    CHECK(clientCert->getValidate());
+    CHECK(clientCert->getUseSystemCertStore());
+}
+
 DROGON_TEST(GeminiRendererParsesYoutubeParameters)
 {
     const std::vector<GeminiASTNode> link{{"", "video", "link",

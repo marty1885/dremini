@@ -69,14 +69,16 @@ namespace internal {
 
 GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
                            intmax_t maxBodySize, double maxTransferDuration, ServerTrust trust,
-                           PeerAddressPolicy peerAddressPolicy, bool requirePkix)
+                           PeerAddressPolicy peerAddressPolicy,
+                           trantor::TLSPolicyPtr tlsPolicy)
     : loop_(loop),
       timeout_(timeout),
       maxBodySize_(maxBodySize),
       maxTransferDuration_(maxTransferDuration),
+      tlsPolicy_(tlsPolicy ? std::make_shared<trantor::TLSPolicy>(*tlsPolicy)
+                           : geminiTlsPolicy()),
       trust_(std::move(trust)),
-      peerAddressPolicy_(std::move(peerAddressPolicy)),
-      requirePkix_(requirePkix) {
+      peerAddressPolicy_(std::move(peerAddressPolicy)) {
     static const std::regex re(R"(([a-z]+):\/\/([^\/:]+)(?:\:([0-9]+))?($|\/.*))");
     std::smatch match;
     if (!std::regex_match(url, match, re))
@@ -91,17 +93,38 @@ GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double tim
         throw std::invalid_argument("Must be a gemini URL");
     port_ = 1965;
     if (port.empty() == false) {
-        int portNum = std::stoi(port);
-        if (portNum >= 65536 || portNum <= 0) {
-            LOG_ERROR << port << "is not a valid port number";
+        unsigned long portNum;
+        try {
+            portNum = std::stoul(port);
+        } catch (const std::exception&) {
+            throw std::invalid_argument(port + " is not a valid port number");
         }
-        port_ = portNum;
+        if (portNum == 0 || portNum > 65535)
+            throw std::invalid_argument(port + " is not a valid port number");
+        port_ = static_cast<uint16_t>(portNum);
     }
 
     if (path.empty() && url.back() != '/')
         url_ = url + "/";
     else
         url_ = url;
+}
+
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
+                           intmax_t maxBodySize, double maxTransferDuration, ServerTrust trust,
+                           PeerAddressPolicy peerAddressPolicy, bool requirePkix)
+    : GeminiClient(std::move(url), loop, timeout, maxBodySize, maxTransferDuration,
+                   std::move(trust), std::move(peerAddressPolicy),
+                   geminiTlsPolicy(requirePkix))
+{
+}
+
+GeminiClient::GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
+                           intmax_t maxBodySize, double maxTransferDuration,
+                           trantor::TLSPolicyPtr tlsPolicy)
+    : GeminiClient(std::move(url), loop, timeout, maxBodySize, maxTransferDuration,
+                   kNoVerification, kAllowAnyPeerAddress, std::move(tlsPolicy))
+{
 }
 
 static thread_local std::shared_ptr<trantor::Resolver> resolver;
@@ -292,14 +315,8 @@ void GeminiClient::sendRequestInLoop() {
     trustStarted_ = false;
     auto weakPtr = weak_from_this();
     client_ = std::make_shared<trantor::TcpClient>(loop_, peerAddress_, "GeminiClient");
-    auto tlsPolicy = trantor::TLSPolicy::defaultClientPolicy(host_);
-    // TOFU callers retain the historic post-handshake trust callback. PKIX
-    // callers use the platform store and fail the handshake before that
-    // callback if the chain, date, or hostname is invalid.
-    if (requirePkix_)
-        tlsPolicy->setValidate(true).setUseSystemCertStore(true);
-    else
-        tlsPolicy->setValidate(false).setUseSystemCertStore(false);
+    auto tlsPolicy = std::make_shared<trantor::TLSPolicy>(*tlsPolicy_);
+    tlsPolicy->setHostname(host_);
     client_->enableSSL(std::move(tlsPolicy));
     client_->setMessageCallback(
         [weakPtr](const trantor::TcpConnectionPtr& connPtr, trantor::MsgBuffer* msg) {
@@ -487,10 +504,11 @@ static std::mutex holderMutex;
 void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout,
                  trantor::EventLoop* loop, intmax_t maxBodySize,
                  const std::vector<std::string>& mimes, double maxTransferDuration,
-                 ServerTrust trust, PeerAddressPolicy peerAddressPolicy, bool requirePkix) {
+                 ServerTrust trust, PeerAddressPolicy peerAddressPolicy,
+                 trantor::TLSPolicyPtr tlsPolicy) {
     auto client = std::make_shared<::dremini::internal::GeminiClient>(
         url, loop, timeout, maxBodySize, maxTransferDuration, std::move(trust),
-        std::move(peerAddressPolicy), requirePkix);
+        std::move(peerAddressPolicy), std::move(tlsPolicy));
     decltype(holder)::iterator it;
     {
         std::lock_guard<std::mutex> lock(holderMutex);
@@ -509,5 +527,24 @@ void sendRequest(const std::string& url, const HttpReqCallback& callback, double
         });
     client->setMimes(mimes);
     client->fire();
+}
+
+void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout,
+                 trantor::EventLoop* loop, intmax_t maxBodySize,
+                 const std::vector<std::string>& mimes, double maxTransferDuration,
+                 ServerTrust trust, PeerAddressPolicy peerAddressPolicy, bool requirePkix)
+{
+    sendRequest(url, callback, timeout, loop, maxBodySize, mimes, maxTransferDuration,
+                std::move(trust), std::move(peerAddressPolicy),
+                geminiTlsPolicy(requirePkix));
+}
+
+void sendRequest(const std::string& url, const HttpReqCallback& callback, double timeout,
+                 trantor::EventLoop* loop, intmax_t maxBodySize,
+                 const std::vector<std::string>& mimes, double maxTransferDuration,
+                 trantor::TLSPolicyPtr tlsPolicy)
+{
+    sendRequest(url, callback, timeout, loop, maxBodySize, mimes, maxTransferDuration,
+                kNoVerification, kAllowAnyPeerAddress, std::move(tlsPolicy));
 }
 }  // namespace dremini
