@@ -327,7 +327,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
     if(!query.empty())
         req->setParameter("query", query);
 
-    LOG_DEBUG << "Gemini/Titan request: scheme=" << scheme << " path=" << path
+    LOG_TRACE << "Gemini/Titan request: scheme=" << scheme << " path=" << path
               << " query_present=" << !query.empty();
 
     if (scheme == "titan")
@@ -345,7 +345,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         }
         if (titan.request->operation == TitanOperation::Edit)
         {
-            LOG_DEBUG << "Titan edit request: resource=" << titan.request->resourcePath;
+            LOG_TRACE << "Titan edit request: resource=" << titan.request->resourcePath;
             if (buf->readableBytes() != 0)
             {
                 rejectRequest(conn, 59, "Titan edit request must not include a body");
@@ -362,7 +362,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 
         req->setMethod(Post);
         req->setPath(titan.request->resourcePath);
-        LOG_DEBUG << "Titan upload request: resource=" << titan.request->resourcePath
+        LOG_TRACE << "Titan upload request: resource=" << titan.request->resourcePath
                   << " size=" << titan.request->size << " mime=" << titan.request->mimeType;
         req->setContentTypeString(titan.request->mimeType);
         req->addHeader("content-type", titan.request->mimeType);
