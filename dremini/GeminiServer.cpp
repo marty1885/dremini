@@ -323,6 +323,10 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
     req->setPath(path);
     req->setPeerCertificate(conn->peerCertificate());
     req->addHeader("protocol", scheme == "titan" ? "titan" : "gemini");
+    // Preserve socket metadata on synthetic requests. Attributes cannot be
+    // supplied by an HTTP client, unlike the protocol compatibility header.
+    req->getAttributes()->insert("peer_ip", conn->peerAddr().toIp());
+    req->getAttributes()->insert("protocol", std::string{scheme});
     req->getAttributes()->insert(kRequestAuthorityAttribute, std::move(authority));
     if(!query.empty())
         req->setParameter("query", query);
