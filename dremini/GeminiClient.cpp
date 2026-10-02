@@ -490,9 +490,11 @@ void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr& connPtr,
         msg->read(std::distance(msg->peek(), crlf) + 2);
     }
 
-    if (maxBodySize_ < 0 || msg->readableBytes() > maxBodySize_) {
-        haveResult(ReqResult::Ok, msg);
-        connPtr->shutdown();
+    if (maxBodySize_ >= 0 &&
+        static_cast<uintmax_t>(msg->readableBytes()) >
+            static_cast<uintmax_t>(maxBodySize_)) {
+        haveResult(ReqResult::BadResponse, nullptr);
+        connPtr->forceClose();
         return;
     }
 }

@@ -17,6 +17,12 @@ DROGON_TEST(GeminiTest)
         CHECK(resp->getHeader("gemini-status") == "20");
     });
 
+    // Responses larger than the configured body limit are rejected.
+    dremini::sendRequest("gemini://127.0.0.1/apitest", [TEST_CTX](ReqResult result, const HttpResponsePtr& resp){
+        CHECK(result == ReqResult::BadResponse);
+        CHECK(resp == nullptr);
+    }, 0, app().getLoop(), 4);
+
     // 404 responses are correctly handled 
     dremini::sendRequest("gemini://127.0.0.1/does_not_exist", [TEST_CTX](ReqResult result, const HttpResponsePtr& resp){
         REQUIRE(result == ReqResult::Ok);
@@ -90,4 +96,3 @@ int main(int argc, char** argv)
     thr.join();
     return status;
 }
-
