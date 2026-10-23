@@ -1,5 +1,6 @@
 #include <dremini/GeminiServer.hpp>
 #include <drogon/HttpAppFramework.h>
+#include <drogon/utils/Utilities.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -329,7 +330,13 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
     req->getAttributes()->insert("protocol", std::string{scheme});
     req->getAttributes()->insert(kRequestAuthorityAttribute, std::move(authority));
     if(!query.empty())
-        req->setParameter("query", query);
+    {
+        // Match HTTP parameters: decode exactly once at the protocol boundary.
+        // Gemini queries use percent encoding; '+' is a literal plus sign.
+        auto encoded = query;
+        drogon::utils::replaceAll(encoded, "+", "%2B");
+        req->setParameter("query", drogon::utils::urlDecode(encoded));
+    }
 
     LOG_TRACE << "Gemini/Titan request: scheme=" << scheme << " path=" << path
               << " query_present=" << !query.empty();
