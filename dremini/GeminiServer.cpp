@@ -331,11 +331,9 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
     req->getAttributes()->insert(kRequestAuthorityAttribute, std::move(authority));
     if(!query.empty())
     {
-        // Match HTTP parameters: decode exactly once at the protocol boundary.
-        // Gemini queries use percent encoding; '+' is a literal plus sign.
-        auto encoded = query;
-        drogon::utils::replaceAll(encoded, "+", "%2B");
-        req->setParameter("query", drogon::utils::urlDecode(encoded));
+        // Match HTTP parameters and existing form-style links: '+' is a space,
+        // while an encoded %2B remains a literal plus. Decode exactly once.
+        req->setParameter("query", drogon::utils::urlDecode(query));
     }
 
     LOG_TRACE << "Gemini/Titan request: scheme=" << scheme << " path=" << path
