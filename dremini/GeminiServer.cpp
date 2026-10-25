@@ -1,4 +1,5 @@
 #include <dremini/GeminiServer.hpp>
+#include "LayoutJitter.hpp"
 #include <drogon/HttpAppFramework.h>
 
 #include <algorithm>
@@ -183,6 +184,11 @@ void GeminiServer::setIoThreadNum(size_t n)
 
 void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 {
+    const LayoutJitter layoutJitter;
+    auto *stackJitter = static_cast<volatile unsigned char *>(
+        __builtin_alloca(layoutJitter.stackBytes()));
+    layoutJitter.touchStack(stackJitter, layoutJitter.stackBytes());
+
     if (const auto state = conn->getContext<ConnectionState>())
     {
         if (state->phase == ConnectionState::Phase::Dispatched)
@@ -203,6 +209,11 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
             return;
         }
 
+        if (state->body.size() > state->expectedBodyBytes)
+        {
+            rejectRequest(conn, 59, "Titan body accounting failure");
+            return;
+        }
         const auto remaining = state->expectedBodyBytes - state->body.size();
         if (buf->readableBytes() > remaining)
         {
@@ -345,9 +356,9 @@ void GeminiServer::dispatchRequest(const TcpConnectionPtr &conn, HttpRequestPtr 
     }
     const auto idx = roundRobbinIdx_.fetch_add(1, std::memory_order_relaxed) % threadNum;
     // Drogon only accepts request from it's own event loops
-    app().getIOLoop(idx)->runInLoop([req=std::move(req), conn=std::move(conn), this](){
-        app().forward(req, [req=std::move(req), conn=std::move(conn), this](const HttpResponsePtr& resp){
-            sendResponseBack(conn, resp);
+    app().getIOLoop(idx)->runInLoop([req=std::move(req), conn=std::move(conn)](){
+        app().forward(req, [req=std::move(req), conn=std::move(conn)](const HttpResponsePtr& resp){
+            GeminiServer::sendResponseBack(conn, resp);
         });
     });
 }

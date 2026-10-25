@@ -287,7 +287,7 @@ static std::string urlFriendly(const std::string_view str)
         if(in(ch, ignore_chars))
             continue;
 
-        ch = std::tolower(ch);
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 
         if(! in(ch, replace_with_dash)) {
             last_is_dash = false;

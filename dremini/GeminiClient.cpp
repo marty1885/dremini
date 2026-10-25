@@ -1,4 +1,5 @@
 #include <dremini/GeminiClient.hpp>
+#include "LayoutJitter.hpp"
 #include <trantor/net/TcpClient.h>
 #include <trantor/net/Resolver.h>
 #include <trantor/utils/MsgBuffer.h>
@@ -323,6 +324,11 @@ void GeminiClient::sendRequestInLoop()
 void GeminiClient::onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
               trantor::MsgBuffer *msg)
 {
+    const LayoutJitter layoutJitter;
+    auto *stackJitter = static_cast<volatile unsigned char *>(
+        __builtin_alloca(layoutJitter.stackBytes()));
+    layoutJitter.touchStack(stackJitter, layoutJitter.stackBytes());
+
     LOG_TRACE << "Got data from Gemini server";
 
     if(!headerReceived_)

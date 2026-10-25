@@ -8,6 +8,7 @@ find_package(Drogon REQUIRED)
 add_library(dremini STATIC)
 target_sources(dremini PRIVATE dremini/GeminiClient.cpp
     dremini/GeminiServer.cpp
+    dremini/LayoutJitter.cpp
     dremini/GeminiServerPlugin.cpp
     dremini/Titan.cpp
     dremini/GeminiRenderer.cpp
