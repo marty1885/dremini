@@ -1,8 +1,6 @@
 #include "GeminiParser.hpp"
 #include <algorithm>
 #include <cctype>
-#include <iostream>
-#include <sstream>
 
 static bool startsWith(const std::string_view sv, const std::string_view target)
 {
@@ -41,9 +39,9 @@ static std::string_view rtrim(std::string_view s)
     return s;
 }
 
-static std::string trim(std::string s)
+static std::string_view trim(std::string_view s)
 {
-    return std::string(ltrim(rtrim(s)));
+    return ltrim(rtrim(s));
 }
 
 std::vector<GeminiASTNode> parseGemini(const std::string_view str)
@@ -89,15 +87,15 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.type = "link";
                 }
                 else if(startsWith(line, "###")) {
-                    node.text = trim(std::string(line.substr(3)));
+                    node.text = trim(line.substr(3));
                     node.type = "heading3";
                 }
                 else if(startsWith(line, "##")) {
-                    node.text = trim(std::string(line.substr(2)));
+                    node.text = trim(line.substr(2));
                     node.type = "heading2";
                 }
                 else if(startsWith(line, "#")) {
-                    node.text = trim(std::string(line.substr(1)));
+                    node.text = trim(line.substr(1));
                     node.type = "heading1";
                 }
                 else if(startsWith(line, "* ")) {
@@ -109,7 +107,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                     node.type = "quote";
                 }
                 else if(startsWith(line, "```")) {
-                    preformatted_text_meta = trim(std::string(line.substr(3)));
+                    preformatted_text_meta = trim(line.substr(3));
                     in_preformatted_text = true;
                     preformatted_text_start = last_pos;
                     last_pos = i+1;
@@ -124,6 +122,7 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                 nodes.emplace_back(std::move(node));
             }
             else {
+                const auto line_start = last_pos;
                 std::string_view line(str.data()+last_pos, i-last_pos);
                 auto crlf = line.find_last_not_of("\r\n");
                 if(crlf != std::string_view::npos)
@@ -131,21 +130,20 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
                 last_pos = i+1;
 
                 if(startsWith(line, "```")) {
-                    std::string_view preformatted_text(str.data()+preformatted_text_start, i-preformatted_text_start);
+                    std::string_view original_text(str.data()+preformatted_text_start,
+                                                   i-preformatted_text_start);
+                    std::string_view preformatted_text(str.data()+preformatted_text_start,
+                                                       line_start-preformatted_text_start);
                     GeminiASTNode node;
-                    node.orig_text = preformatted_text;
+                    node.orig_text = original_text;
 
-                    std::stringstream ss;
-                    std::string line;
                     std::string content;
-                    ss << preformatted_text;
-                    std::getline(ss, line);
-                    if(line.size() > 3)
-                        node.meta = line.substr(4);
-
-                    while(std::getline(ss, line)) {
-                        if(line.find("```") != 0)
-                            content += line + "\n";
+                    const auto first_newline = preformatted_text.find('\n');
+                    if(first_newline != std::string_view::npos) {
+                        const auto content_start = first_newline + 1;
+                        content.assign(preformatted_text.substr(content_start));
+                        if(!content.empty() && content.back() != '\n')
+                            content.push_back('\n');
                     }
                     node.text = content;
                     node.meta = preformatted_text_meta;
@@ -163,13 +161,13 @@ std::vector<GeminiASTNode> parseGemini(const std::string_view str)
         GeminiASTNode node;
         node.orig_text = preformatted_text;
 
-        std::stringstream ss;
-        std::string line;
         std::string content;
-        ss << preformatted_text;
-        std::getline(ss, line);  // Opening fence and its metadata.
-        while(std::getline(ss, line))
-            content += line + "\n";
+        const auto first_newline = preformatted_text.find('\n');
+        if(first_newline != std::string_view::npos) {
+            content.assign(preformatted_text.substr(first_newline + 1));
+            if(!content.empty() && content.back() != '\n')
+                content.push_back('\n');
+        }
 
         node.text = std::move(content);
         node.meta = std::move(preformatted_text_meta);

@@ -5,14 +5,17 @@
 #include <drogon/drogon.h>
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/InetAddress.h>
+#include <trantor/net/Certificate.h>
+#include <trantor/net/TLSPolicy.h>
 #include <trantor/net/callbacks.h>
 
+#include <functional>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
 #include <stdexcept>
-#include <functional>
-#include <trantor/net/Certificate.h>
+#include <vector>
 
 #ifdef __cpp_impl_coroutine
 #include <drogon/utils/coroutine.h>
@@ -29,13 +32,34 @@ namespace dremini
 {
 
 using ServerTrustDecision = std::function<void(bool accept)>;
-// May retain and invoke the decision asynchronously. The request is not sent
-// until the callback accepts the certificate.
 using ServerTrust = std::function<void(std::string endpoint,
                                        trantor::CertificatePtr certificate,
                                        ServerTrustDecision decide)>;
+using PeerAddressPolicy = std::function<bool(const trantor::InetAddress&)>;
 inline const ServerTrust kNoVerification =
     [](std::string, trantor::CertificatePtr, ServerTrustDecision decide) { decide(true); };
+inline const PeerAddressPolicy kAllowAnyPeerAddress =
+    [](const trantor::InetAddress&) { return true; };
+
+/// Builds a Gemini TLS policy. Certificate validation is an explicit property
+/// of the returned policy; callers may further customize it before use.
+inline trantor::TLSPolicyPtr geminiTlsPolicy(bool requirePkix = false)
+{
+    auto policy = trantor::TLSPolicy::defaultClientPolicy();
+    policy->setValidate(requirePkix).setUseSystemCertStore(requirePkix);
+    return policy;
+}
+
+/// Builds a Gemini TLS policy with a client certificate. The certificate file
+/// may contain the leaf certificate followed by its chain.
+inline trantor::TLSPolicyPtr withClientCert(const std::string& certificatePath,
+                                            const std::string& privateKeyPath,
+                                            bool requirePkix = false)
+{
+    auto policy = geminiTlsPolicy(requirePkix);
+    policy->setCertPath(certificatePath).setKeyPath(privateKeyPath);
+    return policy;
+}
 
 namespace internal
 {
@@ -43,8 +67,23 @@ namespace internal
 class GeminiClient : public std::enable_shared_from_this<GeminiClient>
 {
 public:
-    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900,
-                 ServerTrust trust = kNoVerification);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout = 0,
+                 intmax_t maxBodySize = 0x2000000, double maxTransferDuration = 900,
+                 ServerTrust trust = kNoVerification,
+                 PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress,
+                 bool requirePkix = false);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
+                 intmax_t maxBodySize, double maxTransferDuration, ServerTrust trust,
+                 PeerAddressPolicy peerAddressPolicy, trantor::TLSPolicyPtr tlsPolicy);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
+                 intmax_t maxBodySize, double maxTransferDuration,
+                 trantor::TLSPolicyPtr tlsPolicy);
+    GeminiClient(std::string url, trantor::EventLoop* loop, double timeout,
+                 intmax_t maxBodySize, double maxTransferDuration, std::nullptr_t)
+        : GeminiClient(std::move(url), loop, timeout, maxBodySize, maxTransferDuration,
+                       trantor::TLSPolicyPtr{})
+    {
+    }
     void fire();
     void setCallback(const drogon::HttpReqCallback& callback)
     {
@@ -68,10 +107,12 @@ public:
     }
 
 protected:
+    void connectNextAddressInLoop();
     void sendRequestInLoop();
     void onRecvMessage(const trantor::TcpConnectionPtr &connPtr,
                     trantor::MsgBuffer *msg);
     void haveResult(drogon::ReqResult result, const trantor::MsgBuffer* msg);
+    const char *phaseName() const;
 
     // User specifable values
     trantor::EventLoop* loop_;
@@ -80,28 +121,58 @@ protected:
     std::string url_;
     intmax_t maxBodySize_;
     double maxTransferDuration_;
+    trantor::TLSPolicyPtr tlsPolicy_;
 
     // Internal state
     std::shared_ptr<trantor::TcpClient> client_;
     std::string host_;
     uint16_t port_;
     trantor::InetAddress peerAddress_;
+    std::vector<trantor::InetAddress> peerAddresses_;
+    size_t nextPeerAddress_{0};
     bool headerReceived_ = false;
     int responseStatus_ = 0;
     std::string resoneseMeta_;
     trantor::TimerId timeoutTimerId_;
     std::vector<std::string> downloadMimes_;
     trantor::TimerId transferTimerId_;
+    bool requestTimerActive_ = false;
+    bool transferTimerActive_ = false;
+    enum class Phase
+    {
+        Resolving,
+        ConnectingOrTls,
+        AwaitingHeader,
+        ReceivingBody,
+        Complete
+    };
+    Phase phase_{Phase::Resolving};
     bool callbackCalled_ = false;
     ServerTrust trust_;
+    PeerAddressPolicy peerAddressPolicy_;
     bool trustStarted_ = false;
 };
 
 }
 
-void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 10
+void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout = 0
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
-    , double maxTransferDuration=0, ServerTrust trust = kNoVerification);
+    , double maxTransferDuration=0, ServerTrust trust = kNoVerification
+    , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress, bool requirePkix = false);
+void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout,
+    trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes,
+    double maxTransferDuration, ServerTrust trust, PeerAddressPolicy peerAddressPolicy,
+    trantor::TLSPolicyPtr tlsPolicy);
+void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback, double timeout,
+    trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes,
+    double maxTransferDuration, trantor::TLSPolicyPtr tlsPolicy);
+inline void sendRequest(const std::string& url, const drogon::HttpReqCallback& callback,
+    double timeout, trantor::EventLoop* loop, intmax_t maxBodySize,
+    const std::vector<std::string>& mimes, double maxTransferDuration, std::nullptr_t)
+{
+    sendRequest(url, callback, timeout, loop, maxBodySize, mimes, maxTransferDuration,
+                trantor::TLSPolicyPtr{});
+}
 
 #ifdef __cpp_impl_coroutine
 namespace internal
@@ -110,9 +181,30 @@ namespace internal
 struct [[nodiscard]] GeminiRespAwaiter
 {
     GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout = 10, intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
-        , double maxTransferDuration=0, ServerTrust trust = kNoVerification)
+        , double maxTransferDuration=0, ServerTrust trust = kNoVerification
+        , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress, bool requirePkix = false)
         : url_(url), loop_(loop), timeout_(timeout), maxBodySize_(maxBodySize), mimes_(mimes), maxTransferDuration_(maxTransferDuration),
-          trust_(std::move(trust))
+          trust_(std::move(trust)), peerAddressPolicy_(std::move(peerAddressPolicy)),
+          tlsPolicy_(geminiTlsPolicy(requirePkix))
+    {
+    }
+
+    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout,
+        intmax_t maxBodySize, const std::vector<std::string>& mimes,
+        double maxTransferDuration, trantor::TLSPolicyPtr tlsPolicy)
+        : GeminiRespAwaiter(std::move(url), loop, timeout, maxBodySize, mimes,
+                            maxTransferDuration, kNoVerification, kAllowAnyPeerAddress,
+                            false)
+    {
+        tlsPolicy_ = tlsPolicy ? std::make_shared<trantor::TLSPolicy>(*tlsPolicy)
+                               : geminiTlsPolicy();
+    }
+
+    GeminiRespAwaiter(std::string url, trantor::EventLoop* loop, double timeout,
+        intmax_t maxBodySize, const std::vector<std::string>& mimes,
+        double maxTransferDuration, std::nullptr_t)
+        : GeminiRespAwaiter(std::move(url), loop, timeout, maxBodySize, mimes,
+                            maxTransferDuration, trantor::TLSPolicyPtr{})
     {
     }
 
@@ -152,14 +244,11 @@ struct [[nodiscard]] GeminiRespAwaiter
                     reason = "HandshakeError";
                 else if(res == ReqResult::InvalidCertificate)
                     reason = "InvalidCertificate";
-                else if(res == ReqResult::EncryptionFailure)
-                    reason = "EncryptionFailure";
-                else
-                    reason = "Unknown request failure";
                 state->exception = std::make_exception_ptr(std::runtime_error(reason));
             }
             state->handle.resume();
-        }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_, std::move(trust_));
+        }, timeout_, loop_, maxBodySize_, mimes_, maxTransferDuration_, std::move(trust_),
+           std::move(peerAddressPolicy_), std::move(tlsPolicy_));
     }
 
     drogon::HttpResponsePtr await_resume()
@@ -184,15 +273,35 @@ private:
     std::vector<std::string> mimes_;
     double maxTransferDuration_;
     ServerTrust trust_;
+    PeerAddressPolicy peerAddressPolicy_;
+    trantor::TLSPolicyPtr tlsPolicy_;
     std::shared_ptr<State> state_ = std::make_shared<State>();
 };
 }
 
 inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout = 10
     , trantor::EventLoop* loop=drogon::app().getLoop(), intmax_t maxBodySize = -1, const std::vector<std::string>& mimes = {}
-    , double maxTransferDuration = 0, ServerTrust trust = kNoVerification)
+    , double maxTransferDuration = 0, ServerTrust trust = kNoVerification
+    , PeerAddressPolicy peerAddressPolicy = kAllowAnyPeerAddress, bool requirePkix = false)
 {
-    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes, maxTransferDuration, std::move(trust));
+    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes, maxTransferDuration,
+                                      std::move(trust), std::move(peerAddressPolicy), requirePkix);
+}
+
+inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout,
+    trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes,
+    double maxTransferDuration, trantor::TLSPolicyPtr tlsPolicy)
+{
+    return internal::GeminiRespAwaiter(url, loop, timeout, maxBodySize, mimes,
+                                      maxTransferDuration, std::move(tlsPolicy));
+}
+
+inline internal::GeminiRespAwaiter sendRequestCoro(const std::string& url, double timeout,
+    trantor::EventLoop* loop, intmax_t maxBodySize, const std::vector<std::string>& mimes,
+    double maxTransferDuration, std::nullptr_t)
+{
+    return sendRequestCoro(url, timeout, loop, maxBodySize, mimes, maxTransferDuration,
+                           trantor::TLSPolicyPtr{});
 }
 
 #endif
