@@ -11,11 +11,9 @@ LayoutJitter::LayoutJitter()
     if (!drogon::utils::secureRandomBytes(random_.data(), sizeof(random_)))
         std::terminate();
     const auto size = 64 + random_[0] % 4033;
-    heap_ = std::make_unique<unsigned char[]>(size);
+    heap_.reset(new unsigned char[size]);
     auto *memory = static_cast<volatile unsigned char *>(heap_.get());
-    for (std::size_t index = 0; index < size; index += 64)
-        memory[index] = static_cast<unsigned char>(random_[0] >> (index % 56));
-    memory[size - 1] = static_cast<unsigned char>(random_[1]);
+    touchStack(memory, size);
 }
 
 std::size_t LayoutJitter::stackBytes() const noexcept
@@ -25,8 +23,14 @@ std::size_t LayoutJitter::stackBytes() const noexcept
 
 void LayoutJitter::touchStack(volatile unsigned char *memory, std::size_t size) const noexcept
 {
-    for (std::size_t index = 0; index < size; index += 64)
-        memory[index] = static_cast<unsigned char>(random_[1] >> (index % 56));
-    memory[size - 1] = static_cast<unsigned char>(random_[0]);
+    // Fully initialize every byte. Each aligned word has noncanonical high
+    // bits on x86-64 (including LA57). Every byte also has high bits 10,
+    // so misaligned words are noncanonical too.
+    for (std::size_t index = 0; index < size; ++index)
+    {
+        const auto byte = index % 8;
+        memory[index] = byte >= 6 ? static_cast<unsigned char>(0xa5) :
+            static_cast<unsigned char>(0x80 | ((random_[index % 2] >> (byte * 8)) & 0x3f));
+    }
 }
 }  // namespace dremini

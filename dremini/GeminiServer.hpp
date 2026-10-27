@@ -67,17 +67,17 @@ protected:
     static void sendClaimedResponseBack(const trantor::TcpConnectionPtr& conn,
                                         const drogon::HttpResponsePtr& resp);
     void onConnection(const trantor::TcpConnectionPtr &conn);
-    void onMessage(const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf);
-    void dispatchRequest(const trantor::TcpConnectionPtr &conn,
+    static void onMessage(const trantor::TcpConnectionPtr &conn, trantor::MsgBuffer *buf,
+                          TitanOptions options);
+    static void dispatchRequest(const trantor::TcpConnectionPtr &conn,
                          drogon::HttpRequestPtr request);
-    void rejectRequest(const trantor::TcpConnectionPtr &conn,
+    static void rejectRequest(const trantor::TcpConnectionPtr &conn,
                        int status,
                        std::string meta);
     trantor::EventLoop* loop_;
     trantor::TcpServer server_;
     TitanOptions titanOptions_;
     std::shared_ptr<ConnectionLimiter> connectionLimiter_;
-    std::atomic_uint32_t roundRobbinIdx_{0};
 };
 
 }

@@ -1,5 +1,6 @@
 #include <dremini/GeminiServer.hpp>
 #include "LayoutJitter.hpp"
+#include "GuardedPointer.hpp"
 #include <drogon/HttpAppFramework.h>
 #include <drogon/utils/Utilities.h>
 
@@ -21,6 +22,8 @@ namespace
 constexpr std::size_t kMaxRequestLineBytes = 1024;
 constexpr std::size_t kMaxResponseHeaderBytes = 1024;
 constexpr std::size_t kRequestDeadlineSeconds = 60;
+// All listeners dispatch into the same application event-loop pool.
+std::atomic_uint32_t nextApplicationLoop{0};
 
 struct ParsedRequestLine
 {
@@ -195,8 +198,9 @@ GeminiServer::GeminiServer(EventLoop* loop,
     tlsPolicy->setPeerCertificateRequest(false)
         .setCertificateVerification(false);
     server_.enableSSL(std::move(tlsPolicy));
-    server_.setConnectionCallback([this](const TcpConnectionPtr& conn) {onConnection(conn);});
-    server_.setRecvMessageCallback([this](const TcpConnectionPtr& conn, MsgBuffer* buf){onMessage(conn, buf);});
+    server_.setConnectionCallback([self = GuardedPointer<GeminiServer>{this}](const TcpConnectionPtr& conn) {self->onConnection(conn);});
+    // Parsing needs immutable options, not access to the server object.
+    server_.setRecvMessageCallback([options = titanOptions_](const TcpConnectionPtr& conn, MsgBuffer* buf){onMessage(conn, buf, options);});
 }
 
 void GeminiServer::onConnection(const TcpConnectionPtr& conn)
@@ -243,7 +247,7 @@ void GeminiServer::setIoThreadNum(size_t n)
     server_.setIoLoopNum(n);
 }
 
-void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
+void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf, TitanOptions options)
 {
     const LayoutJitter layoutJitter;
     auto *stackJitter = static_cast<volatile unsigned char *>(
@@ -352,12 +356,12 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
 
     if (scheme == "titan")
     {
-        if (!titanOptions_.enabled)
+        if (!options.enabled)
         {
             rejectRequest(conn, 50, "Titan uploads are not enabled");
             return;
         }
-        const auto titan = parseTitanRequest(path, titanOptions_.maxUploadBytes);
+        const auto titan = parseTitanRequest(path, options.maxUploadBytes);
         if (!titan)
         {
             rejectRequest(conn, 59, std::string{titanParseErrorMessage(titan.error)});
@@ -396,7 +400,7 @@ void GeminiServer::onMessage(const TcpConnectionPtr &conn, MsgBuffer *buf)
         // The declared size is peer-controlled. Do not reserve it: memory is
         // acquired only for bytes actually received, under the server-owned
         // maximum enforced by parseTitanRequest().
-        onMessage(conn, buf);
+        onMessage(conn, buf, options);
         return;
     }
 
@@ -424,7 +428,7 @@ void GeminiServer::dispatchRequest(const TcpConnectionPtr &conn, HttpRequestPtr 
         rejectRequest(conn, 40, "Temporary Failure");
         return;
     }
-    const auto idx = roundRobbinIdx_.fetch_add(1, std::memory_order_relaxed) % threadNum;
+    const auto idx = nextApplicationLoop.fetch_add(1, std::memory_order_relaxed) % threadNum;
     // Drogon only accepts request from it's own event loops
     app().getIOLoop(idx)->runInLoop([req=std::move(req), conn=std::move(conn)](){
         app().forward(req, [req=std::move(req), conn=std::move(conn)](const HttpResponsePtr& resp){
